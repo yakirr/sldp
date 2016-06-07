@@ -6,9 +6,9 @@ import gzip
 from pybedtools import BedTool
 from pyutils import iter as it
 import itertools
-import primitives.dataset as prd
-import primitives.genome as prg
-import primitives.annotation as pa
+import gprim.dataset as prd
+import gprim.genome as prg
+import gprim.annotation as pa
 
 
 def get_ldscores(ldscoresfile):
