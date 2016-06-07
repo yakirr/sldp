@@ -34,7 +34,7 @@ def get_sumstats(sumstatsfile, thresh_factor):
     print('\tthreshold sample size:', Nthresh)
     print('\toriginally at', len(sumstats), 'SNPs')
     sumstats = sumstats.loc[
-            sumstats['N'] <= Nthresh]
+            sumstats['N'] >= Nthresh]
     print('\tafter filtering by N, now at', len(sumstats), 'SNPs')
     print('\tmin, mean (std), max of N is:',
             '{}, {} ({}), {}'.format(
