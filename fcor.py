@@ -28,12 +28,12 @@ def main(args):
                 how='left', on='SNP')
         data['TYPED'] = ~pd.isnull(data.Z)
 
-        print('reading MAF info')
-        data['MAF'] = refpanel.frq_df(c).MAF
-
         print('reading sannot files')
         A, A_names = common.get_annots([a.sannot_filename(c) for a in annots])
-        A[A_names] *= np.sqrt(2*data.MAF[:,None]*(1-data.MAF[:,None]))
+        if not args.per_norm_genotype:
+            print('reading MAF info')
+            data['MAF'] = refpanel.frq_df(c).MAF
+            A[A_names] *= np.sqrt(2*data.MAF[:,None]*(1-data.MAF[:,None]))
         AO_names = pa.Annotation.names_observed(A_names)
         AOconv_names = pa.Annotation.names_conv(A_names)
         AOw_names = [n + '.w' for n in AO_names]
@@ -53,10 +53,11 @@ def main(args):
         print('matching sumstats alleles and annot alleles')
         toflip = data['A1_ss'] == data['A2_annot']
         data.ix[toflip, 'Z'] *= -1
+        print('\tflipped', np.sum(toflip), 'SNPs')
 
         print('convolving annotations')
         common.convolve(data, AO_names + AOw_names, (refpanel, c),
-                args.ld_breakpoints, args.mhc_path,
+                args.ld_breakpoints, args.mhc_path, fullconv=args.fullconv,
                 newnames=AOconv_names+AOwconv_names)
 
         # create the relevant numpy arrays
@@ -168,6 +169,7 @@ def submit(args):
             '--bfile-chr', args.bfile_chr,
             '--sannot-chr'] + args.sannot_chr + \
                 (['-fullconv'] if args.fullconv else []) + \
+                (['-per-norm-genotype'] if args.per_norm_genotype else []) + \
             ['--chroms', '$LSB_JOBINDEX']
     outfilename = args.outfile_chr + '%I.out'
     submit_jobname = 'acor{}[{}-{}]'.format(
@@ -210,12 +212,14 @@ if __name__ == '__main__':
     # define arguments for main and submit
     mainsubmit_parser = argparse.ArgumentParser(add_help=False)
     #   required
-    mainsubmit_parser.add_argument('--bfile-chr', required=True,
-            help='path to plink bfile of reference panel to use, not including chrom num')
     mainsubmit_parser.add_argument('--sannot-chr', required=True, nargs='+',
             help='space-delimited list of paths to gzipped annot files, not including ' + \
                     'chromosome number or .annot.gz extension')
     #   optional
+    mainsubmit_parser.add_argument('--bfile-chr',
+            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
+                '1000G.EUR.QC.',
+            help='path to plink bfile of reference panel to use, not including chrom num')
     mainsubmit_parser.add_argument('--ld-breakpoints',
             default='/groups/price/yakir/data/reference/pickrell_breakpoints.hg19.eur.bed',
             help='path to UCSC bed file containing one zero-length bed interval per LD' + \
@@ -229,15 +233,19 @@ if __name__ == '__main__':
     mainsubmit_parser.add_argument('-convfile', action='store_true', default=False,
             help='use the .conv.gz file corresponding to the annotation supplied, ' + \
                     'rather than generating the .conv.gz file at runtime')
+    mainsubmit_parser.add_argument('-per-norm-genotype', action='store_true', default=False,
+            help='assume that v is in unites of per normalized genotype rather than per ' +\
+                    'allele')
     # mainsubmit_parser.add_argument('--full-ldscores-chr', default='None',
     #         help='ld scores to and at all refpanel snps. If supplied these will be used ' +\
     #                 'to weight the quantity being estimated')
 
     # define arguments for submit and merge
     submitmerge_parser = argparse.ArgumentParser(add_help=False)
-    #   required
-    submitmerge_parser.add_argument('--ldscores-chr', required=True,
-            help='path to a set of .l2.ldscore.gz files containin a column named L2 with ' + \
+    #   optional
+    submitmerge_parser.add_argument('--ldscores-chr',
+            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/LDscore/LDscore.',
+            help='path to a set of .l2.ldscore.gz files containing a column named L2 with ' + \
                     'ld scores at a smallish set of snps. ld should be computed to other ' + \
                     'snps in the set only')
     submitmerge_parser.add_argument('-reg-var', action='store_true', default=False,

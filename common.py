@@ -81,6 +81,8 @@ def mult_by_R_ldblocks(V, (refpanel, chrnum), ld_breakpoints, mhcpath):
     result = np.zeros(V.shape)
     for r in it.show_progress(blocks.ranges()):
         # print('\tXTXV', r[0], r[1], 'of', refpanel.M(chrnum))
+        if np.sum(V[r[0]:r[1],:] != 0) == 0: # if V is all 0 in this block, don't bother
+            continue
         X = refpanel.stdX(chrnum, r)
         result[r[0]:r[1],:] = X.T.dot(X.dot(V[r[0]:r[1],:]))
     return result / refpanel.N()
@@ -104,6 +106,9 @@ def mult_by_R_noldblocks(V, (refpanel, chrnum)):
     XV = 0
     while r < refpanel.M(chrnum):
         s = (r, min(r+1000, refpanel.M(chrnum)))
+        if np.sum(V[s[0]:s[1]] != 0) == 0: # if V is all 0 in this block, don't bother
+            r += 1000
+            continue
         print(s, 'of', refpanel.M(chrnum))
         X = refpanel.stdX(chrnum, s)
         XV += X.dot(V[s[0]:s[1]])
@@ -147,7 +152,7 @@ def convolve(df, cols_to_convolve, (refpanel, chrnum), ld_breakpoints, mhcpath,
         raise Exception()
     refwithdf = refpanel.bim_df(chrnum).merge(df, how='left', on=['SNP'])
 
-    print('\tconvolving')
+    print('\tconvolving, fullconv=', fullconv)
     if fullconv:
         RV = mult_by_R_noldblocks(refwithdf[cols_to_convolve].values, (refpanel, chrnum))
     else:
