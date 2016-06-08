@@ -109,7 +109,13 @@ def merge(args):
             sep='\t')
         for c in args.chroms], axis=0).reset_index(drop=True)
     A_names = df.names[0].split(','); df.drop(['names'], axis=1, inplace=True)
-    df = df.applymap(json.loads).applymap(np.array)
+
+    # parse arrays inside dataframe into numpy arrays
+    def parse(s):
+        s = s.replace('0.]', '0]')
+        return np.array(json.loads(s))
+    df = df.applymap(parse)
+
     sums = np.sum(df, axis=0)
     print(df)
     print(np.sum(df, axis=0))
@@ -172,8 +178,9 @@ def submit(args):
                 (['-per-norm-genotype'] if args.per_norm_genotype else []) + \
             ['--chroms', '$LSB_JOBINDEX']
     outfilename = args.outfile_chr + '%I.out'
-    submit_jobname = 'acor{}[{}-{}]'.format(
-                args.outfile_chr.replace('/','_'), args.chr_start, args.chr_end)
+    submit_jobname = 'acor{}[{}]'.format(
+                args.outfile_chr.replace('/','_'),
+                ','.join(map(str, args.chroms)))
     jobid = bsub.submit(['python', '-u', __file__] + submit_args,
             outfilename,
             jobname=submit_jobname,
@@ -188,7 +195,7 @@ def submit(args):
             'merge',
             '--ldscores-chr', args.ldscores_chr] + \
                 (['-reg-var'] if args.reg_var else []) + \
-            ['--chroms'] + map(str, range(args.chr_start, args.chr_end+1))
+            ['--chroms'] + map(str, args.chroms)
     outfilename = args.outfile_chr + 'all.out'
     bsub.submit(['python', '-u', __file__] + merge_args,
             outfilename,
@@ -262,12 +269,11 @@ if __name__ == '__main__':
     sp_main.add_argument('--chroms', nargs='+',
             default=range(1,23),
             help='For main: which chromosomes to analyze.')
-    sp_sub.add_argument('--chr-start', type=int,
-            default=1,
-            help='which chromosome to start submitting at')
-    sp_sub.add_argument('--chr-end', type=int,
-            default=22,
-            help='which chromosome to end submitting at (inclusive)')
+
+    # define arguments for submit specifically
+    sp_sub.add_argument('--chroms', nargs='+',
+            default=range(1,23),
+            help='Which chromosomes to submit.')
     sp_sub.add_argument('-debug', action='store_true', default=False,
             help='do not actually submit the jobs, just print the submission commands')
 
