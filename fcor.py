@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import argparse
+import os
 import numpy as np
 import scipy.stats as stats
 import pandas as pd
@@ -117,50 +118,61 @@ def merge(args):
     df = df.applymap(parse)
 
     sums = np.sum(df, axis=0)
-    print(df)
-    print(np.sum(df, axis=0))
-    VTalphahat = np.sum(df.VTalphahat)
-    VTRV = np.sum(df.VTRV)
-    cov1 = np.sum(df.cov1)
-    cov2 = np.sum(df.cov2)
+    with open('{}all.res'.format(args.outfile_chr), 'w') as outfile:
+        print(df); print(df, file=outfile)
+        print(np.sum(df, axis=0)); print(np.sum(df, axis=0), file=outfile)
+        VTalphahat = np.sum(df.VTalphahat)
+        VTRV = np.sum(df.VTRV)
+        cov1 = np.sum(df.cov1)
+        cov2 = np.sum(df.cov2)
 
-    # compute estimate and covariance matrix
-    estimate = np.linalg.solve(VTRV, VTalphahat)
-    cov1_ = np.linalg.solve(VTRV, np.linalg.solve(VTRV, cov1).T)
-    cov2_ = sigma2g * np.linalg.solve(VTRV, np.linalg.solve(VTRV, cov2).T)
-    if args.reg_var:
-        cov = cov1_ + cov2_
-    else:
-        cov = cov1_
+        # compute estimate and covariance matrix
+        estimate = np.linalg.solve(VTRV, VTalphahat)
+        cov1_ = np.linalg.solve(VTRV, np.linalg.solve(VTRV, cov1).T)
+        cov2_ = sigma2g * np.linalg.solve(VTRV, np.linalg.solve(VTRV, cov2).T)
+        if args.reg_var:
+            cov = cov1_ + cov2_
+        else:
+            cov = cov1_
 
-    # print output
-    output = pd.DataFrame(columns=
-            ('NAME','MU_EST','MU_STDERR','MU_Z','MU_P', 'TOP', 'BOTTOM', 'COV1', 'COV2'))
-    for i, n in enumerate(A_names):
-        std = np.sqrt(cov[i,i])
-        output.loc[i] = [n, estimate[i], std,
-                estimate[i]/std,
-                2*stats.norm.sf(abs(estimate[i]/std),0,1),
-                VTalphahat,
-                VTRV,
-                cov1_,
-                cov2_]
-    print(output)
+        # print output
+        output = pd.DataFrame(columns=
+                ('NAME','MU_EST','MU_STDERR','MU_Z','MU_P', 'TOP', 'BOTTOM', 'COV1', 'COV2'))
+        for i, n in enumerate(A_names):
+            std = np.sqrt(cov[i,i])
+            output.loc[i] = [n, estimate[i], std,
+                    estimate[i]/std,
+                    2*stats.norm.sf(abs(estimate[i]/std),0,1),
+                    VTalphahat,
+                    VTRV,
+                    cov1_,
+                    cov2_]
+        print(output); print(output, file=outfile)
 
-    e = estimate[0]; c1 = cov1_[0,0]; c2 = cov2_[0,0]; s2e = 1-h2g
-    variances = [('fX, fb', s2e*c1),
-            ('rX, fb', c1),
-            ('fX, rb', s2e*c1 + c2),
-            ('rX, rb', c1 + c2)]
-    for name, var in variances:
-        std = np.sqrt(var)
-        print('{}: Z={}, 2-sided p={}'.format(
-            name, e/std, 2*stats.norm.sf(abs(e/std),0,1)))
+        e = estimate[0]; c1 = cov1_[0,0]; c2 = cov2_[0,0]; s2e = 1-h2g
+        variances = [('fX, fb', s2e*c1),
+                ('rX, fb', c1),
+                ('fX, rb', s2e*c1 + c2),
+                ('rX, rb', c1 + c2)]
+        for name, var in variances:
+            std = np.sqrt(var)
+            print('{}: Z={}, 2-sided p={}'.format(
+                name, e/std, 2*stats.norm.sf(abs(e/std),0,1)))
+            print('{}: Z={}, 2-sided p={}'.format(
+                name, e/std, 2*stats.norm.sf(abs(e/std),0,1)), file=outfile)
 
-    covariance = pd.DataFrame(columns=A_names, data=cov)
-    print('\nfull covariance matrix:\n{}'.format(cov))
+        covariance = pd.DataFrame(columns=A_names, data=cov)
+        print('\nfull covariance matrix:\n{}'.format(cov))
+        print('\nfull covariance matrix:\n{}'.format(cov), file=outfile)
 
-    #TODO: save output and delete intermediate files?
+    if not args.keep_files:
+        print('removing files...')
+        for c in args.chroms:
+            try:
+                os.remove('{}{}.res'.format(args.outfile_chr, c))
+                os.remove('{}{}.out'.format(args.outfile_chr, c))
+            except OSError:
+                pass
 
 
 def submit(args):
@@ -195,6 +207,7 @@ def submit(args):
             'merge',
             '--ldscores-chr', args.ldscores_chr] + \
                 (['-reg-var'] if args.reg_var else []) + \
+                (['-keep-files'] if args.keep_files else []) + \
             ['--chroms'] + map(str, args.chroms)
     outfilename = args.outfile_chr + 'all.out'
     bsub.submit(['python', '-u', __file__] + merge_args,
@@ -251,12 +264,15 @@ if __name__ == '__main__':
     submitmerge_parser = argparse.ArgumentParser(add_help=False)
     #   optional
     submitmerge_parser.add_argument('--ldscores-chr',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/LDscore/LDscore.',
-            help='path to a set of .l2.ldscore.gz files containing a column named L2 with ' + \
-                    'ld scores at a smallish set of snps. ld should be computed to other ' + \
+            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/weights/'+\
+                    'weights.hm3_noMHC.',
+            help='path to a set of .l2.ldscore.gz files containing a column named L2 with '+\
+                    'ld scores at a smallish set of snps. ld should be computed to other '+\
                     'snps in the set only')
     submitmerge_parser.add_argument('-reg-var', action='store_true', default=False,
             help='report a std. error based on a random-beta model')
+    submitmerge_parser.add_argument('-keep-files', default=False, action='store_true',
+            help='tell merge not to delete per-chromosome intermediate files when finished')
 
     # create actual subparsers
     sp_main, sp_sub, sp_merge = bsub.add_main_and_submit(parser, main, submit,
