@@ -28,9 +28,16 @@ def main(args):
                 sumstats.rename(columns={'A1':'A1_ss', 'A2':'A2_ss'}),
                 how='left', on='SNP')
         data['TYPED'] = ~pd.isnull(data.Z)
+        print(np.sum(data.TYPED), 'typed refpanel snps')
 
         print('reading sannot files')
         A, A_names = common.get_annots([a.sannot_filename(c) for a in annots])
+        #remove mhc
+        if int(c) == 6:
+            mhc = (data.BP > 25500000) & (data.BP < 35500000) #TODO:read this from file
+            A.loc[mhc, A_names] = 0 # this line assumes that A and data have same
+                                    # snps in same order; this is checked later
+            print('zeroed out annotation for', len(mhc), 'snps in mhc')
         if not args.per_norm_genotype:
             print('reading MAF info')
             data['MAF'] = refpanel.frq_df(c).MAF
@@ -68,6 +75,7 @@ def main(args):
         RV = data[AOconv_names].values
         RLV = data[AOwconv_names].values
         alphahat = data['Z'] / np.sqrt(data['N'].values)
+        M = np.sum(data.TYPED)
 
         # compute the estimates and write output
         result = pd.DataFrame(
@@ -76,18 +84,21 @@ def main(args):
                     'cov1',
                     'cov2',
                     '|supp(V)|',
-                    'names'],
+                    'names',
+                    'M'],
                 data=[[
                     V.T.dot(alphahat),
                     V.T.dot(RV),
                     LV.T.dot(RLV),
                     RV.T.dot(RV),
                     np.sum(V != 0, axis=0),
-                    ','.join(A_names)
+                    ','.join(A_names),
+                    M
                     ]])
         outfile = '{}{}.res'.format(args.outfile_chr, c)
         fs.makedir_for_file(outfile)
         result.to_csv(outfile, sep='\t', index=False)
+        data.to_csv(outfile + '.data', sep='\t', index=False)
         print(result)
 
 def merge(args):
@@ -113,8 +124,11 @@ def merge(args):
 
     # parse arrays inside dataframe into numpy arrays
     def parse(s):
-        s = s.replace('0.]', '0]')
-        return np.array(json.loads(s))
+        if type(s) == str:
+            s = s.replace('0.]', '0]')
+            return np.array(json.loads(s))
+        else:
+            return s
     df = df.applymap(parse)
 
     sums = np.sum(df, axis=0)
@@ -186,10 +200,13 @@ def submit(args):
             '--mhc-path', args.mhc_path,
             '--bfile-chr', args.bfile_chr,
             '--sannot-chr'] + args.sannot_chr + \
+            '--full-ldscores-chr'] + args.full_ldscores_chr + \
                 (['-fullconv'] if args.fullconv else []) + \
                 (['-per-norm-genotype'] if args.per_norm_genotype else []) + \
+                (['-weight-ld'] if args.weight_ld else []) + \
             ['--chroms', '$LSB_JOBINDEX']
     outfilename = args.outfile_chr + '%I.out'
+    fs.makedir_for_file(outfilename)
     submit_jobname = 'acor{}[{}]'.format(
                 args.outfile_chr.replace('/','_'),
                 ','.join(map(str, args.chroms)))
@@ -197,7 +214,7 @@ def submit(args):
             outfilename,
             jobname=submit_jobname,
             time_in_hours=1,
-            memory_GB=4,
+            memory_GB=5,
             debug=args.debug)
 
     # submit merge job
@@ -215,7 +232,7 @@ def submit(args):
             jobname='merge_acor{}'.format(
                 args.outfile_chr.replace('/','_')),
             time_in_minutes=20,
-            memory_GB=2,
+            memory_GB=4,
             depends_on=jobid,
             debug=args.debug)
 
@@ -256,9 +273,14 @@ if __name__ == '__main__':
     mainsubmit_parser.add_argument('-per-norm-genotype', action='store_true', default=False,
             help='assume that v is in unites of per normalized genotype rather than per ' +\
                     'allele')
-    # mainsubmit_parser.add_argument('--full-ldscores-chr', default='None',
-    #         help='ld scores to and at all refpanel snps. If supplied these will be used ' +\
-    #                 'to weight the quantity being estimated')
+    mainsubmit_parser.add_argument('--full-ldscores-chr',
+            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/allSNPs/'+\
+                    '1000G.EUR.QC.',
+            help='ld scores to and at all refpanel snps. We assume these are the same snps '+\
+                    'in the same order as the reference panel. These ld scores will be '+\
+                    'used to weight the quantity being estimated if weight-ld flag is used.')
+    mainsubmit_parser.add_argument('-weight-ld', action='store_true', default=False,
+            help='weight the quantity being estimated by the --full-ldscores-chr data.')
 
     # define arguments for submit and merge
     submitmerge_parser = argparse.ArgumentParser(add_help=False)
