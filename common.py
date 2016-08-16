@@ -11,16 +11,17 @@ import gprim.genome as prg
 import gprim.annotation as pa
 
 
-def get_ldscores(ldscoresfile):
+def get_ldscores(ldscoresfile_chr, c):
     print('reading ldscores')
-    return pd.read_csv(ldscoresfile, header=0, sep='\t', compression='gzip')
+    filename = ldscoresfile_chr + str(c) + '.l2.ldscore.gz'
+    return pd.read_csv(filename, header=0, sep='\t', compression='gzip')
 
 def get_ldscores_allchr(ldscoresfile_chr, chromosomes):
     print('reading ldscores')
     ldscores = []
     for chrnum in chromosomes:
         print('\t', chrnum)
-        ldscores.append(get_ldscores(ldscoresfile_chr + str(chrnum) + '.l2.ldscore.gz'))
+        ldscores.append(get_ldscores(ldscoresfile_chr, chrnum))
     return pd.concat(ldscores).reset_index(drop=True)
 
 def get_sumstats(sumstatsfile, thresh_factor):
@@ -60,10 +61,10 @@ def get_annots(annotfilenames):
         annot_names += newannot_names
 
     print('\tannotation names:', annot_names)
-    print('\tannotation contains', len(annot), 'SNPs')
-    print('\tannotation supported on',
+    print('\tannotations contain', len(annot), 'SNPs')
+    print('\tannotations supported on',
             np.sum(annot[annot_names].values != 0, axis=0), 'SNPs')
-    print('\tsquared norm of annotation is',
+    print('\tsquared norm of annotations is',
             np.linalg.norm(annot[annot_names].values, axis=0)**2)
     return annot, annot_names
 
@@ -217,18 +218,14 @@ def get_ambiguous(alleles, A1name, A2name):
         if x[0] != x[1]}
     return np.array([STRAND_AMBIGUOUS[x] for x in allele])
 
-def check_for_strand_ambiguity(data, names, A1name='A1_x', A2name='A2_x'):
-    nonzero = np.empty(len(data))
-    nonzero = False
-    for n in names:
-        nonzero |= (data[n] != 0)
+def remove_strand_ambiguity(A_data, A, A1name='A1_x', A2name='A2_x'):
+    amb = get_ambiguous(A_data, A1name, A2name)
+    nonzero = (np.linalg.norm(A_data[A], axis=1) > 0)
+    amb_nonzero = amb & nonzero
+    print('\ttotal number of ambiguous snps with nonzero annotation:',
+            np.sum(amb_nonzero), '. zeroing out')
+    if np.sum(amb_nonzero) > 0:
+        # print(A_data.loc[amb_nonzero])
+        A_data.loc[amb_nonzero, A] = 0
 
-    print('\ttotal number of snps with non-zero annotation:', np.sum(nonzero))
-
-    amb = get_ambiguous(data.loc[nonzero], A1name, A2name)
-    if np.sum(amb) > 0:
-        print('\tannotation contains strand-ambiguous snps! aborting.')
-        print(data.loc[nonzero].SNP[amb])
-        exit(1)
-    else:
-        print('\tno strand-ambiguous snps found')
+    return A_data.loc[amb_nonzero].SNP
