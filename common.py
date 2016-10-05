@@ -88,6 +88,26 @@ def mult_by_R_ldblocks(V, (refpanel, chrnum), ld_breakpoints, mhcpath):
         result[r[0]:r[1],:] = X.T.dot(X.dot(V[r[0]:r[1],:]))
     return result / refpanel.N()
 
+def mult_by_Rinv_ldblocks(V, mask, (refpanel, chrnum), ld_breakpoints, mhcpath, l=0.1):
+    print('\tloading ld breakpoints and MHC')
+    breakpoints = BedTool(ld_breakpoints)
+    mhc = BedTool(mhcpath)
+    print('\tconstructing SNP partition')
+    blocks = prg.SnpPartition(refpanel.ucscbed(chrnum), breakpoints, mhc)
+
+    print('\tdoing multiplication')
+    result = np.zeros(V.shape); result[:,:] = np.nan
+    for r in it.show_progress(blocks.ranges()):
+        if np.sum(V[r[0]:r[1], :] != 0) == 0: # if V is all 0 in this block, don't bother
+            continue
+        myMask = mask[r[0]:r[1]]
+        myV = V[r[0]:r[1],:][myMask]
+        X = refpanel.stdX(chrnum, r)[:, myMask]
+        result[r[0]:r[1],:][myMask] = myV/l - \
+                X.T.dot(np.linalg.solve(
+                    refpanel.N()*np.eye(refpanel.N()) + X.dot(X.T)/l, X.dot(myV))) / l**2
+    return (1+l)*result
+
 def get_biascorrection(V, RV, Lambda, (refpanel, chrnum), breakpoints, mhcpath):
     print('\tloading ld breakpoints and MHC')
     breakpoints = BedTool(breakpoints)

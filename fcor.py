@@ -4,7 +4,6 @@ import os
 import numpy as np
 import scipy.stats as stats
 import pandas as pd
-import json #TODO: remove this import
 import pickle
 import pyutils.pretty as pretty
 import pyutils.bsub as bsub
@@ -39,6 +38,10 @@ def main(args):
 
         print('reading sannot files')
         A_data, A = common.get_annots([a.sannot_filename(c) for a in annots])
+        if args.average_annot:
+            print('AVERAGING ANNOTATIONS')
+            A_data['average'] = np.mean(A_data[A].values, axis=1)
+            A = ['average']
 
         if args.weight_ld:
             print('reading ld scores for weighting')
@@ -272,6 +275,7 @@ def submit(args):
             '--sannot-chr'] + args.sannot_chr + \
                 (['-fullconv'] if args.fullconv else []) + \
                 (['-per-norm-genotype'] if args.per_norm_genotype else []) + \
+                (['-average-annot'] if args.average_annot else []) + \
                 (['-weight-ld'] if args.weight_ld else []) + \
             ['--chroms', '$LSB_JOBINDEX']
     outfilename = fs.make_hidden(args.outfile_chr + '%I.out')
@@ -282,8 +286,8 @@ def submit(args):
     jobid = bsub.submit(['python', '-u', __file__] + submit_args,
             outfilename,
             jobname=submit_jobname,
-            time_in_hours=1,
-            memory_GB=5,
+            time_in_hours=5,
+            memory_GB=16,
             debug=args.debug)
 
     # submit merge job
@@ -300,8 +304,8 @@ def submit(args):
             outfilename,
             jobname='merge_acor{}'.format(
                 args.outfile_chr.replace('/','_')),
-            time_in_minutes=20,
-            memory_GB=4,
+            time_in_minutes=60,
+            memory_GB=8,
             depends_on=jobid,
             debug=args.debug)
 
@@ -340,8 +344,10 @@ if __name__ == '__main__':
             help='use the .conv.gz file corresponding to the annotation supplied, ' + \
                     'rather than generating the .conv.gz file at runtime')
     mainsubmit_parser.add_argument('-per-norm-genotype', action='store_true', default=False,
-            help='assume that v is in unites of per normalized genotype rather than per ' +\
+            help='assume that v is in units of per normalized genotype rather than per ' +\
                     'allele')
+    mainsubmit_parser.add_argument('-average-annot', action='store_true', default=False,
+            help='average all annotations before doing anything')
     mainsubmit_parser.add_argument('--full-ldscores-chr',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/allSNPs/'+\
                     '1000G.EUR.QC.',
