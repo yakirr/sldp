@@ -5,240 +5,230 @@ import numpy as np
 import scipy.stats as st
 import pandas as pd
 import itertools as it
-from pybedtools import BedTool
-import pyutils.pretty as pretty
-import pyutils.bsub as bsub
-import pyutils.fs as fs
-import pyutils.iter as pyit
-import gprim.annotation as ga
-import gprim.dataset as gd
-import pyutils.memo as memo
-import gc
-import time
+import glob
+import statutils.sig as sig
 
 
-# import re
-# def str_to_np(x):
-#     if not type(x)==str:
-#         return x
-#     result = re.sub(r'[0-9.]\s+[0-9.]', ',', x)
-#     result = re.sub(r'\]\s+\[', ',', result)
-#     result = result.replace('nan', 'float(\'nan\')')
-#     return np.array(eval(result))
+def spearman_stat(df):
+    val, pval = st.spearmanr(df.voTRv.values, df.vTahat.values)
+    return val, -1, pval
 
-# def read_results(outfile):
-#     ldblocks = pd.read_csv(outfile, sep='\t')
-#     ldblocks.vTahat = ldblocks.vTahat.apply(str_to_np)
-#     ldblocks.voTRv = ldblocks.voTRv.apply(str_to_np)
-#     ldblocks.voTRvo = ldblocks.voTRvo.apply(str_to_np)
-#     ldblocks.voTRvo_N = ldblocks.voTRvo_N.apply(str_to_np)
-#     ldblocks.voTR2vo = ldblocks.voTR2vo.apply(str_to_np)
-#     return ldblocks
-def process_blockresults(blockresults):
-    def stat(df):
-        z = df.vTahat.values / df.voTRv.values
-        mask = np.isfinite(z)
-        return df[mask].vTahat.values.dot(df[mask].weights.values) / df[mask].weights.sum()
+def spearman_sflip(df):
+    def sp(x,y,w):
+        x = np.argsort(np.argsort(x))
+        y = np.argsort(np.argsort(y))
+        xc = x-np.mean(x)
+        yc = y-np.mean(y)
+        xcw = xc*w
+        ycw = yc*w
+        return xc.dot(ycw)/np.sqrt(xc.dot(xcw)*yc.dot(ycw))
 
-    def jackknife(df, s):
-        loo = np.zeros(len(df))
-        B = len(loo)
-        for i in range(B):
-            loo[i] = s(df[np.arange(B)!=i])
-        return s(df), np.sqrt((B-1)*np.var(loo))
+    x = df.vTahat.values; y = df.voTRv.values; w = df.weights.values
+    nz = (w != 0)
+    x = x[nz]; y = y[nz]; w = w[nz]
+    val = sp(x, y, w)
+    rand_signs = (-1)**np.random.binomial(1,0.5,size=(1000,len(y)))
+    null = [sp(x, rand_signs[i]*y, w) for i in range(1000)]
+    std = np.std(null)
+    pval = st.chi2.sf((val/std)**2, 1)
+    return val, std, pval
 
-    # set weights
-    blockresults['weights'] = blockresults.voTRv.values
+def lin_reg(df):
+    y = df.vTahat.values
+    x = df.voTRv.values
+    w = df.weights.values
+    w[w<0] = 0
+    conc = np.sort(w)[-40:].sum() / w.sum()
+    numbig = (x >= 0.5).sum()
+    quant = np.sort(w)[-40]
+    nz = (w!=0)&(x!=0)
+    x = x[nz]; y = y[nz]; w = w[nz]
 
+    # adjust weights to reduce influence of outliers
+    w /= w.sum()
+    # TODO: make 10 biggest weights of w equal to the 10-th biggest one?
+    w[w>0.05] = 0.05
+    # try:
+    #     w[w > 0.05] = w[w<=0.05].max()
+    # except:
+    #     print('exception')
+    #     w[w > 0.05] = 0.05
+
+    x *= (np.sqrt(w)/x); y *= (np.sqrt(w)/x)
+    h = (x*x)/x.dot(x)
+
+    val = x.dot(y)/x.dot(x)
+    resid2 = (y - val*x)**2 / (1-h)**2
+    std = np.sqrt(x.dot(x*resid2)) / x.dot(x)
+    pval = st.chi2.sf((val/std)**2, 1)
+    return val, std, pval, conc, numbig, quant
+
+def correlation_stat(df):
+    return np.corrcoef(df.voTRv.values, df.vTahat.values)[0,1]
+
+def rand_sign(df):
+    z = np.nan_to_num(df.vTahat.values / df.voTRv.values)
+    numerator = z.dot(df.weights.values)
+    denominator = df.weights.sum()
+
+    val = numerator/denominator
+    std = np.sqrt((z**2).dot(df.weights.values**2) / df.weights.sum()**2)
+    pval = st.chi2.sf((val/std)**2, 1)
+    return val, std, pval
+
+def generic_jackknife(df, stat):
+    loo = np.zeros(len(df))
+    for i in range(len(loo)):
+        loo[i] = stat(df[np.arange(len(loo))!=i])
+    val = stat(df)
+    std = np.sqrt((len(loo)-1)*np.var(loo))
+    pval = st.chi2.sf((val/std)**2, 1)
+    return val, std, pval
+
+# NOTE: I think it doesn't make sense to use the function below,
+# because it assumes the jackknife weights equals the regression weights, which
+# doesn't quite seem right
+def weighted_jackknife(df):
+    z = np.nan_to_num(df.vTahat.values / df.voTRv.values)
+    m = df.weights.values
+    nz = (df.weights != 0)
+    z = z[nz]; m=m[nz]; g = len(z)
+    n = m.sum()
+    numerator = z.dot(m)
+    denominator = m.sum()
+    phi = numerator/denominator
+    numerators = numerator - z*m
+    denominators = denominator - m
+    loo = numerators / denominators
+    phiJ = g*phi - ((n-m)/n).dot(loo)
+    h = n / m
+    tau = h*phi - (h-1)*loo
+    var = ((tau - phiJ)**2/(h-1)).sum() / g
+    std = np.sqrt(var)
+    pval = st.chi2.sf((phi/std)**2, 1)
+    return phi, std, pval
+
+def jackknife(df):
+    z = df.vTahat.values / df.voTRv.values
+    w = df.weights.values
+    nz = ((df.weights != 0) & np.isfinite(z)).values
+    z = z[nz]; w=w[nz]; g = len(z)
+    numerator = z.dot(w)
+    denominator = w.sum()
+
+    phi = numerator/denominator
+    numerators = numerator - z*w
+    denominators = denominator - w
+    loo = numerators / denominators
+
+    std = np.sqrt((g-1)*np.var(loo))
+    pval = st.chi2.sf((phi/std)**2, 1)
+    return phi, std, pval
+
+def get_weights(df, scheme):
+    if scheme=='const': # constant weights
+        return np.ones(len(df))
+    elif scheme=='constnz':
+        result = np.ones(len(df))
+        result[df.voTRv.values == 0] = 0
+        return result
+    elif scheme=='top':
+        result = np.ones(len(df))
+        thresh = np.sort(df.voTRv.values)[-30]
+        result[result < thresh] = 0
+        return result
+    elif scheme=='sqrt':
+        return np.nan_to_num(np.sqrt(df.voTRv.values))
+    elif scheme=='fixed': # weights resulting in fixed-beta statistic
+        return np.nan_to_num(df.voTRv.values)
+    elif scheme=='rank':
+        result = np.argsort(np.argsort(df.voTRv.values))
+        result[df.voTRv.values == 0] = 0
+        return result
+    elif scheme=='sqrtrank':
+        result = np.sqrt(np.argsort(np.argsort(df.voTRv.values)))
+        result[df.voTRv.values == 0] = 0
+        return result
+    elif scheme=='naive': # naively regress vTahat against voTRv
+        return np.nan_to_num(df.voTRv.values**2)
+    elif scheme=='cubic': # extreme up-weighting of points with large vTRv
+        return np.nan_to_num(df.voTRv.values**3)
+    elif scheme=='xtreme':
+        return np.nan_to_num(df.voTRv.values**100)
+    elif scheme=='optimal': # theoretically optimal random beta weights
+        return np.nan_to_num(df.voTRv.values**2 / \
+            (df.voTRvo_N.values + df.sigma2g.values*df.voTR2vo.values))
+    elif scheme=='simple_random': # simplest weights that incl. both v and ld to other stuff
+        return np.nan_to_num(df.voTRv.values**2 / df.voTR2vo.values)
+
+def set_weights(df, scheme):
+    df.loc[:,'weights'] = get_weights(df, scheme)
+
+def aggregate(args):
     results = pd.DataFrame(columns=['pheno','annot','stat','std','p'])
-    annots = np.unique(blockresults.annot.values)
-    phenos = np.unique(blockresults.pheno.values)
-    for p, a in it.product(phenos, annots):
-        myresults = blockresults[(blockresults.annot == a)&(blockresults.pheno == p)]
-        val, std = jackknife(myresults, stat)
-        results = results.append({
-            'pheno':p,
-            'annot':a,
-            'stat':val,
-            'std':std,
-            'p':st.chi2.sf((val/std)**2, 1)}, ignore_index=True)
-    return results
+    for filename in args.files:
+        print('aggregating {} using statistic "{}" and weights "{}" with Rinv="{}"'.format(
+            filename, args.statistic, args.weight_scheme, args.Rinv))
 
-# def multiply(ldblocks='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
-#         bfile_chr='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/1000G.EUR.QC.',
-#         annot_chr=['/groups/price/yakir/data/annot/basset/UwGm12878Ctcf/prod0.lfc.',
-#             '/groups/price/yakir/data/annot/basset/BroadDnd41Ctcf/prod0.lfc.'],
-#         ldscores_chr='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/weights/weights.hm3_noMHC.',
-#         per_norm_genotype=False,
-#         sumstats='/groups/price/yakir/data/sumstats/UKBB_body_HEIGHTz.sumstats.gz',
-#         outfile_stem='/groups/price/yakir/temp'):
-def multiply(args):
-    # basic initialization
-    chroms = range(1,23)
-    nrows=None
-    chunksize = 25
-    refpanel = gd.Dataset(args.bfile_chr)
-    annots = [ga.Annotation(annot) for annot in args.annot_chr]
-    names = np.concatenate([annot.names(22) for annot in annots]) # names of annotations
-    namesO = [n + '.O' for n in names] # names of annotations zeroed out at untyped snps
-    nice_ss_name = sumstats.split('/')[-1].split('.sumstats.gz')[0]
-    blockresults = pd.DataFrame(columns=['pheno','annot','block_num','chr','start','end'])
+        blockresults = pd.read_csv(filename, sep='\t')
+        if args.Rinv:
+            blockresults.voTRv = blockresults.normVo
+            blockresults.vTahat = blockresults.vfTahat
+            blockresults.voTRvo_N = blockresults.vfTRvf_N
+            blockresults.voTR2vo = blockresults.normVo
 
-    # read in ld blocks and remove ones that overlap mhc
-    mhc = [25684587, 35455756]
-    ldblocks = pd.read_csv(args.ldblocks, delim_whitespace=True, header=False,
-            names=['chr','start', 'end'])
-    mhcblocks = (ldblocks.chr == 'chr6') & (ldblocks.end > mhc[0]) & (ldblocks.start < mhc[1])
-    ldblocks = ldblocks[~mhcblocks]
+        set_weights(blockresults, scheme=args.weight_scheme)
 
-    # read sumstats, remove outlier snps
-    print('reading sumstats', nice_ss_name)
-    ss = pd.read_csv(args.sumstats, sep='\t', nrows=nrows)
-    ss['ahat'] = ss.Z / np.sqrt(ss.N)
-    print('{} snps, {}-{} individuals (avg: {})'.format(
-        len(ss), np.min(ss.N), np.max(ss.N), np.mean(ss.N)))
-    ss = ss[ss.ahat**2 <= 8e-4] #TODO: think about whether to remove outliers
-    print(len(ss), 'snps after removing outliers')
-
-    # estimate heritability using aggregate estimator
-    print('reading in ld scores')
-    l2 = pd.concat([pd.read_csv(args.ldscores_chr+str(c)+'.l2.ldscore.gz',
-                        delim_whitespace=True)
-                    for c in chroms], axis=0)
-    print(len(l2), 'snps')
-    ssl2 = pd.merge(ss, l2, on='SNP', how='inner')
-    print(len(ssl2), 'snps after merge')
-    ssl2 = ssl2[~((ssl2.CHR == 6) & (ssl2.BP >= mhc[0]) & (ssl2.BP < mhc[1]))]
-    print(len(ssl2), 'snps after removing mhc')
-    sample_size_corr = np.sum(1./ssl2.N.values)
-    sigma2g = (np.linalg.norm(ssl2.ahat.values)**2 - sample_size_corr) \
-            / np.sum(ssl2.L2.values)
-    sigma2g = min(max(0,sigma2g), 1/len(ssl2))
-    h2g = sigma2g*len(ssl2); sigma2e = 1-h2g
-    print('h2g estimated at:', h2g, 'sigma2g:', sigma2g)
-    del l2; del ssl2; gc.collect()
-
-    t0 = time.time()
-    for c in chroms:
-        print(time.time()-t0, ': loading annot for chr', c)
-        # read in all annotations for this chr. we assume that all annots have same snps with
-        # same coding as each other and as refpanel, in same order
-        snps = ga.smart_merge([annot.sannot_df(c) for annot in annots],
-                fail_if_nonmatching=True, drop_from_y=['BP','CM','A1','A2','CHR'])
-        print(len(snps), 'snps in annot', len(snps.columns), 'columns, including metadata')
-        # adjust for maf
-        if not args.per_norm_genotype:
-            print('adjusting for maf')
-            maf = refpanel.frq_df(c)
-            snps[names] = snps[names].values*np.sqrt(
-                    2*maf.MAF.values*(1-maf.MAF.values))[:,None]
-            del maf
-
-        # merge annot and sumstats, and create Vo := V zeroed out at unobserved snps
-        print('reconciling')
-        snps = ga.reconciled_to(snps, ss, ['ahat'], othercolnames=['N'])
-        snps['typed'] = snps.N.notnull()
-        snps[namesO] = snps[names]; snps.loc[~snps.typed, namesO] = 0
-
-        # restrict to ld blocks in this chr and process them in chunks
-        chr_blocks = ldblocks[ldblocks.chr=='chr'+str(c)]
-        for block_nums in pyit.grouper(chunksize, range(len(chr_blocks))):
-            # get ld blocks in this chunk, and indices of the snps that start and end them
-            chunk_blocks = chr_blocks.iloc[block_nums]
-            blockstarts_ind = np.searchsorted(snps.BP.values, chunk_blocks.start.values)
-            blockends_ind = np.searchsorted(snps.BP.values, chunk_blocks.end.values)
-            print('{} : chr {} snps {} - {}'.format(
-                time.time()-t0, c, blockstarts_ind[0], blockends_ind[-1]))
-
-            # read in refpanel for this chunk, and find the relevant annotated snps
-            Xchunk = refpanel.stdX(c, (blockstarts_ind[0], blockends_ind[-1]))
-            snpschunk = snps.iloc[blockstarts_ind[0]:blockends_ind[-1]]
-            print('read in chunk')
-
-            # calibrate ld block starts and ends with respect to the start of this chunk
-            blockends_ind -= blockstarts_ind[0]
-            blockstarts_ind -= blockstarts_ind[0]
-            for i, start_ind, end_ind in zip(
-                    chunk_blocks.index, blockstarts_ind, blockends_ind):
-                X = Xchunk[:, start_ind:end_ind]
-                snpsblock = snpschunk.iloc[start_ind:end_ind]
-                V = snpsblock[names].values
-                Vo = snpsblock[namesO].values
-                ahat = snpsblock.ahat.values
-                N = np.nanmin(snpsblock.N.values) # TODO: fix this for variable N!
-
-                # compute RVo
-                mask = np.unique(np.where(Vo)[0])
-                RVo = X.T.dot(X[:,mask].dot(Vo[mask])) / X.shape[0]
-
-                # store blockresults
-                VTahat = V.T.dot(ahat)
-                VoTRV = RVo.T.dot(V)
-                VoTRVo = Vo.T.dot(RVo)
-                VoTRVo_N = Vo.T.dot(RVo)/N
-                VoTR2Vo = RVo.T.dot(RVo) / (1+1/X.shape[0])
-                for j,n in enumerate(names):
-                    blockresults = blockresults.append({
-                        'pheno':nice_ss_name,
-                        'annot':n,
-                        'block_num':i,
-                        'chr':ldblocks.loc[i,'chr'],
-                        'start':ldblocks.loc[i,'start'],
-                        'end':ldblocks.loc[i,'end'],
-                        'vTahat':VTahat[j],
-                        'voTRv':VoTRV[j,j],
-                        'voTRvo':VoTRVo[j,j],
-                        'voTRvo_N':VoTRVo_N[j,j],
-                        'voTR2vo':VoTR2Vo[j,j],
-                        'sigma2g':sigma2g}, ignore_index=True)
-                del X; del V; del Vo; del ahat; del N; del snpsblock
-            del Xchunk; del snpschunk; gc.collect()
-        memo.reset(); gc.collect()
-
-    print('writing block-by-block results')
-    blockresults.to_csv(args.outfile_stem + '.blocks', sep='\t', index=False)
-
-    results = process_blockresults(blockresults)
-    results.to_csv(args.outfile_stem + '.results', sep='\t', index=False)
-    print('done')
+        annots = blockresults.annot.unique()
+        phenos = blockresults.pheno.unique()
+        print('computing pvals')
+        for p, a in it.product(phenos, annots):
+            # print(len(results), p, a)
+            myresults = blockresults[(blockresults.annot == a)&(blockresults.pheno == p)]
+            conc = numbig = quant = 0
+            if args.statistic=='linear':
+                val, std, pval = jackknife(myresults)
+            elif args.statistic=='spearman':
+                val, std, pval = spearman_stat(myresults)
+            elif args.statistic=='spearman_sflip':
+                val, std, pval = spearman_sflip(myresults)
+            elif args.statistic=='correlation':
+                val, std, pval = generic_jackknife(myresults, correlation_stat)
+            elif args.statistic=='rand_sign':
+                val, std, pval = rand_sign(myresults)
+            elif args.statistic=='lin_reg':
+                val, std, pval, conc, numbig, quant = lin_reg(myresults)
+            # print(val, std, pval, conc, numbig, quant)
+            results = results.append({
+                'pheno':p,
+                'annot':a,
+                'stat':val,
+                'std':std,
+                'p':pval,
+                'conc':conc,
+                'numbig':numbig,
+                'quant':quant}, ignore_index=True)
+        print(sig.fdr(results.p))
+    outfilename = '{}.{}.{}'.format(
+        args.outfile_stem, args.statistic, args.weight_scheme)
+    if args.Rinv:
+        outfilename = outfilename + '.Rinv'
+    print('writing', outfilename)
+    results.to_csv(outfilename, sep='\t', index=False)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--outfile', required=True,
-            help='path to an output file stem')
-    parser.add_argument('--sumstats', nargs='+', required=True,
-            help='path to sumstats.gz files, including extension')
-    parser.add_argument('--N-thresh', type=float, default=1.0,
-            help='this times the 90th percentile N is the sample size threshold')
-    parser.add_argument('--num-perms', type=int, default=10000,
-            help='the number of permutation tests to run')
-    parser.add_argument('--sannot-chr', required=True,
-            help='path to gzipped annot files, not including ' + \
-                    'chromosome number or .sannot.gz extension')
-    parser.add_argument('--bfile-chr',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
-                '1000G.EUR.QC.',
-            help='path to plink bfile of reference panel to use, not including chrom num')
-    parser.add_argument('--ld-blocks',
-            default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
-            help='path to UCSC bed file containing one bed interval per LD' + \
-                    ' block')
-    parser.add_argument('--mhc-path',
-            default='/groups/price/yakir/data/reference/hg19.MHC.bed',
-            help='path to UCSC bed file containing one zero-length bed interval per LD' + \
-                    ' breakpoint')
-    parser.add_argument('-per-norm-genotype', action='store_true', default=False,
-            help='assume that v is in units of per normalized genotype rather than per ' +\
-                    'allele')
-    submitmerge_parser.add_argument('--ldscores-chr',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/weights/'+\
-                    'weights.hm3_noMHC.',
-            help='path to a set of .l2.ldscore.gz files containing a column named L2 with '+\
-                    'ld scores at a smallish set of snps. ld should be computed to other '+\
-                    'snps in the set only. this is used to estimate heritability')
+    parser.add_argument('files', nargs='+',
+            help='filename pattern describing a bunch of files in *.blocks format')
+    parser.add_argument('--outfile-stem', required=True,
+            help='path to output file, stat type and weight scheme will be appended to name')
+    parser.add_argument('--statistic', default='linear',
+            help='the type of statistic to use for aggregating across loci')
+    parser.add_argument('--weight-scheme', default='fixed',
+            help='the weighting scheme to use for the statistic')
+    parser.add_argument('-Rinv', default=False, action='store_true',
+            help='whether to use the fine-mapped statistics')
 
     args = parser.parse_args()
-    main(args)
-
-
+    aggregate(args)
