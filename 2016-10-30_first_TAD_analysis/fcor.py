@@ -73,24 +73,49 @@ def main(args):
             if t.sum() == 0: # skip loci with no typed snps
                 continue
             V = locussnps[names].values[t]
+            Vr = V * (-1)**np.random.binomial(1,0.5,size=V.shape)
             bhat = locussnps.bhat.values[t]
             ahat = locussnps.ahat.values[t]
             N = locussnps.N.values[t]
 
-            def var_s(v, b): # variance of v.dot(bhat)
-                return (v**2).dot(b**2)
-            def var_ss(v, b): # variance of v.dot(bhat)**2 - (v**2).dot(bhat**2)
-                return 2*((v**2).dot(b**2)**2 - (v**4).dot(b**4))
+            def perm_z(v, b):
+                stat = np.abs(v.dot(b))
+                p = 1; p_std = 1; nullsize = 0; null = np.array([])
+                while (p == 0 or p_std/p >= 0.5) and nullsize <= 1e5:
+                    newsize = int(max(100, nullsize * 0.5))
+                    newnull = np.abs(np.array([np.random.permutation(v).dot(b)
+                        for i in range(newsize)]))
+                    p = (nullsize*p + (newnull >= stat).sum()) / (nullsize+newsize)
+                    nullsize += newsize
+                    p_std = np.sqrt(p*(1-p)/nullsize)
+                    null = np.concatenate([null, newnull])
+                    if nullsize > 10000:
+                        print(nullsize, p, p_std)
+                if p < 1e-5:
+                    z = (stat - null.mean())/ null.std()
+                    p = min(st.chi2.sf(z**2, 1), 1e-5)
+                else:
+                    z = np.sign(stat - null.mean()) * np.sqrt(st.chi2.isf(p, 1))
+                return z
+
+            def signperm_std(v, b):
+                return np.sqrt((v**2).dot(b**2))
 
             # store locusresults
             VTbhat = V.T.dot(bhat)
+            VrTbhat = Vr.T.dot(bhat)
 
             for j,n in enumerate(names):
-                v = V[:,j]
+                v = V[:,j]; vr = Vr[:,j]
                 if np.linalg.norm(v) == 0: # skip empty vs
                     continue
 
                 vTbhat = VTbhat[j]
+                vTbhat_zp = perm_z(v, bhat)
+                vTbhat_stds = signperm_std(v, bhat)
+                vrTbhat = VrTbhat[j]
+                vrTbhat_zp = perm_z(vr, bhat)
+                vrTbhat_stds = signperm_std(vr, bhat)
                 maxv = np.max(np.abs(v))
 
                 locusresults = locusresults.append({
@@ -100,12 +125,14 @@ def main(args):
                     'chr':loci.loc[i,'chr'],
                     'start':loci.loc[i,'start'],
                     'end':loci.loc[i,'end'],
-                    'vTbhat':VTbhat[j], # sum statistic
-                    'vTbhat_prod':VTbhat[j]**2 - (v**2).dot(bhat**2), # product statistic
-                    'vTbhat_s2':(v**2).dot(bhat**2), # variance of sum statistic
-                    'vTbhat_s4':(v**4).dot(bhat**4), # used for variance of product stat
-                    'vTbhat_vars':var_s(v,bhat), # variance of sum statistic
-                    'vTbhat_varss':var_ss(v,bhat), # variance of product statistic
+                    'vTbhat':vTbhat,
+                    'vTbhat_zp':vTbhat_zp,
+                    'vTbhat_stds':vTbhat_stds,
+                    'vTbhat_ss':((v*bhat)**2).sum(),
+                    'vrTbhat':vrTbhat,
+                    'vrTbhat_zp':vrTbhat_zp,
+                    'vrTbhat_stds':vrTbhat_stds,
+                    'vrTbhat_ss':((vr*bhat)**2).sum(),
                     'suppVo':(v!=0).sum(),
                     'normahat':ahat.dot(ahat),
                     'normbhat':bhat.dot(bhat),
@@ -117,7 +144,7 @@ def main(args):
                     'normVo_info1':maxv/np.linalg.norm(v, ord=1),
                     'normVo_2o4':(np.linalg.norm(v, ord=2)**2)/(np.linalg.norm(v, ord=4)**2)},
                     ignore_index=True)
-            del V; del t; del ahat; del bhat; del N; del locussnps
+            del V; del Vr; del t; del ahat; del bhat; del N; del locussnps
             gc.collect()
         del snps; memo.reset(); gc.collect()
 

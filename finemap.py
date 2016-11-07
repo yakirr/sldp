@@ -127,7 +127,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sumstats-stem', #required=True,
+    parser.add_argument('--sumstats-stem', required=True,
             default='/groups/price/yakir/data/sumstats/UKBB_body_HEIGHTz',
             help='path to sumstats.gz files, not including ".sumstats.gz" extension')
     parser.add_argument('--Lambda', type=float, default=0.1)
