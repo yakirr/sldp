@@ -48,7 +48,7 @@ def aggregate(args):
                 'ss_std':_prod_std,
                 'prod':_prod,
                 'prod_std':_prod_std,
-                'prod_p':st.chi2.sf((_prod/_prod_std)**2,1),
+                'prod_p':st.norm.sf(_prod/_prod_std,0,1),
                 'norm_1':norm1,
                 'norm_2':norm2,
                 'norm_4':norm4,
@@ -62,6 +62,7 @@ def aggregate(args):
         results.to_csv(outfilename, sep='\t', index=False)
         print(sig.fdr(results.sum_p))
         print(sig.fdr(results.prod_p))
+        print(sig.fdr(results.prod_p, st=False))
 
 
 if __name__ == '__main__':

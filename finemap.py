@@ -65,7 +65,7 @@ def main(args):
         # merge annot and sumstats, and create Vo := V zeroed out at unobserved snps
         print('reconciling')
         snps = ga.reconciled_to(snps, ss, ['ahat'], othercolnames=['N'], missing_val=np.nan)
-        snps['typed'] = snps.N.notnull()
+        snps['typed'] = snps.ahat.notnull()
         snps['bhat'] = np.nan
 
         # restrict to ld blocks in this chr and process them in chunks
@@ -106,13 +106,15 @@ def main(args):
                 # compute betahat
                 print('inverting')
                 t = snpsblock.typed.values
-                X_t = X[:,t]; ahat_t = ahat[t]
-                B = mult_Rinv(ahat_t.reshape((-1,1)), X_t)
-                snps.loc[snpschunk.iloc[start_ind:end_ind].index[t],'bhat'] = B[:,-1]
+                monomorphic = (np.var(X, axis=0) == 0)
+                use = t&(~monomorphic)
+                X_u = X[:,use]; ahat_u = ahat[use]
+                B = mult_Rinv(ahat_u.reshape((-1,1)), X_u)
+                snps.loc[snpschunk.iloc[start_ind:end_ind].index[use],'bhat'] = B[:,-1]
 
                 # store results
                 del X; del ahat; del snpsblock
-                del X_t; del B
+                del X_u; del B
             del Xchunk; del snpschunk; gc.collect()
 
         print('writing finemapped sumstats')

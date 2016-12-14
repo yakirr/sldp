@@ -75,6 +75,8 @@ def main(args):
             V = locussnps[names].values[t]
             bhat = locussnps.bhat.values[t]
             ahat = locussnps.ahat.values[t]
+            if args.no_finemap:
+                bhat = ahat
             N = locussnps.N.values[t]
 
             def var_s(v, b): # variance of v.dot(bhat)
@@ -139,6 +141,8 @@ if __name__ == '__main__':
                 '/groups/price/yakir/data/annot/basset/BroadDnd41Ctcf/prod0.lfc.'],
             help='one or more paths to gzipped annot files, not including ' + \
                     'chromosome number or .sannot.gz extension')
+    parser.add_argument('-no-finemap', default=False, action='store_true',
+            help='dont use the finemapped sumstats, use the normal sumstats')
     parser.add_argument('--bfile-chr',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
                 '1000G.EUR.QC.',
