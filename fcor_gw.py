@@ -56,7 +56,7 @@ def main(args):
     mhcmask = None
     locus_inds = None
     refpanel = gd.Dataset(args.bfile_chr)
-    nice_ss_name = args.bhat_chr.split('/')[-2].split('.KG3')[0]
+    nice_ss_name = args.bhat_chr.split('/')[-2].split('.')[0]
     annots = [ga.Annotation(annot) for annot in args.sannot_chr]
     results = pd.DataFrame()
 
@@ -71,18 +71,23 @@ def main(args):
 
     print('reading maf')
     maf = np.concatenate([refpanel.frq_df(c).MAF.values for c in args.chroms])
+    g = np.concatenate([refpanel.frq_df(c).A2 == 'G' for c in args.chroms])
+    c = np.concatenate([refpanel.frq_df(c).A2 == 'C' for c in args.chroms])
+    gccont = g|c
     memo.reset(); gc.collect(); mem()
 
-    col = ('ahat' if args.no_finemap else 'bhat')
-    print('reading sumstats, specifically:', col)
+    print('reading sumstats, specifically:', args.use)
     ss = np.concatenate([
-        pd.read_csv(args.bhat_chr+str(c)+'.bhat.gz', sep='\t', usecols=[col])[col].values
+        pd.read_csv(args.bhat_chr+str(c)+'.bhat.gz', sep='\t',
+            usecols=[args.use])[args.use].values
         for c in args.chroms])
     print('getting typed snps')
     typed = np.isfinite(ss)
-    print('restricting to typed snps')
+    print('restricting to typed snps, of which there are', typed.sum())
     bhat = ss[typed]
 
+    maft = maf[typed]
+    gct = gccont[typed]
     mem()
 
     t0 = time.time()
@@ -93,7 +98,6 @@ def main(args):
 
         print('restricting to typed snps only')
         a = a[typed]
-        maft = maf[typed]
         memo.reset(); gc.collect(); mem()
 
         if mhcmask is None:
@@ -105,6 +109,8 @@ def main(args):
             locus_inds = get_locus_inds(a, loci, args.chroms)
 
         print('creating V')
+        print('there are', (~np.isfinite(a[names].values)).sum(), 'nans in the annotation.',
+                'This number should be 0.')
         V = a[names].values
         del a; gc.collect(); mem()
 
@@ -127,18 +133,21 @@ def main(args):
             print('centering betahat and v')
             bhatc = bhat.copy()
             vc = v.copy()
+            vpc = np.abs(v)
             cvec = (-np.abs(v) if args.center_on_v else maft)
             cutoffs = np.percentile(cvec[nz], [0,5,10,20,50,100])
+            # cutoffs = np.percentile(cvec[nz], [0,100])
             for a, b in zip(cutoffs[:-1],cutoffs[1:]):
                 print('\t',a,b,((cvec>=a)&(cvec<b)&nz).sum())
                 bhatc[(cvec >= a)&(cvec<b)&nz] -= bhat[(cvec >=a)&(cvec<b)&nz].mean()
                 vc[(cvec >= a)&(cvec<b)&nz] -= vc[(cvec >=a)&(cvec<b)&nz].mean()
+                vpc[(cvec >= a)&(cvec<b)&nz] -= vpc[(cvec >=a)&(cvec<b)&nz].mean()
 
             # compute q
             qall = v*bhat
-            qcall = vc*bhatc
+            qcall = vc*bhat
             qpall = np.abs(v)*bhat
-            qpcall = np.abs(vc)*bhat
+            qpcall = vpc*bhat
 
             #go through and for (q1,q2,...) that should be merged, replace them
             # with (q1+q2+...,0)
@@ -260,8 +269,8 @@ if __name__ == '__main__':
                 '/groups/price/yakir/data/annot/basset/HaibK562Atf3V0416101/prod0.lfc.'],
             help='one or more paths to gzipped annot files, not including ' + \
                     'chromosome number or .sannot.gz extension')
-    parser.add_argument('-no-finemap', default=False, action='store_true',
-            help='dont use the finemapped sumstats, use the normal sumstats')
+    parser.add_argument('--use', default='bhat',
+            help='which column from the processed sumstats file.')
     parser.add_argument('-clumpv', default=False, action='store_true',
             help='clump togther close-by snps in the null')
     parser.add_argument('-center-on-v', default=False, action='store_true',

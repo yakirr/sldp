@@ -14,26 +14,11 @@ import resource
 def mem():
     print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000)
 
-def get_p_empirical(q):
-    print(len(q))
-    p = 1; p_std = 100; num_per = int(20000000 / len(q))
-    stat = q.sum()
-    null = np.array([])
-    while p_std > 0.3*p and p > 1e-6:
-        rademachers = np.random.binomial(1,0.5,(num_per, len(q)))
-        rademachers[rademachers == 0] = -1
-        null = np.concatenate([null, rademachers.dot(q)])
-        p = max((np.abs(null) > np.abs(stat)).sum(), 1) / len(null)
-        p_std = np.sqrt(p*(1-p)/len(null))
-        print('\t',len(null), p, p_std)
-    return p
-
 def main(args):
     # basic initialization
     mhc = [25684587, 35455756]
     refpanel = gd.Dataset(args.bfile_chr)
     annots = [ga.Annotation(annot) for annot in args.sannot_chr]
-    results = pd.DataFrame()
     mem()
 
     t0 = time.time()
@@ -93,8 +78,6 @@ def main(args):
 
         memo.reset(); gc.collect(); mem()
 
-    print('writing results')
-    results.to_csv(args.outfile_stem + '.gwresults', sep='\t', index=False)
     print('done')
 
 

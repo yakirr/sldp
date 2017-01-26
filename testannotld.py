@@ -22,7 +22,7 @@ def main(args):
     refpanel = gd.Dataset(args.bfile_chr)
     annots = [ga.Annotation(annot) for annot in args.sannot_chr]
     names = np.concatenate([annot.names(22) for annot in annots]) # names of annotations
-    ldblockresults = pd.DataFrame(columns=['pheno','annot','locus_num','chr','start','end'])
+    ldblockresults = pd.DataFrame(columns=['annot','locus_num','chr','start','end'])
 
     # read in ldblocks and remove ones that overlap mhc
     mhc = [25684587, 35455756]
