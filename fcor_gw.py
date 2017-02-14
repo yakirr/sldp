@@ -36,7 +36,7 @@ def get_p_empirical(q):
     return p
 
 def get_locus_inds(snps, loci, chroms):
-    loci.sort(columns='CHR', inplace=True)
+    loci.sort_values(by='CHR', inplace=True)
     locusstarts = np.array([])
     locusends = np.array([])
     for c in chroms:
@@ -53,12 +53,14 @@ def get_locus_inds(snps, loci, chroms):
 def main(args):
     # basic initialization
     mhc = [25684587, 35455756]
-    mhcmask = None
     locus_inds = None
     refpanel = gd.Dataset(args.bfile_chr)
     nice_ss_name = args.bhat_chr.split('/')[-2].split('.')[0]
     annots = [ga.Annotation(annot) for annot in args.sannot_chr]
     results = pd.DataFrame()
+    if not args.thin_annot:
+        print('WARNING: only thin-annot is supported right now. I dont take into account '+\
+                'any other information (eg, allele codes) in the annotation.')
 
     # read in loci and remove ones that overlap mhc
     loci = pd.read_csv(args.loci, delim_whitespace=True, header=None,
@@ -66,14 +68,12 @@ def main(args):
     mhcblocks = (loci.CHR == 'chr6') & (loci.end > mhc[0]) & (loci.start < mhc[1])
     loci = loci[~mhcblocks]
     print(len(loci), 'loci after removing MHC')
-
     mem()
 
-    print('reading maf')
-    maf = np.concatenate([refpanel.frq_df(c).MAF.values for c in args.chroms])
-    g = np.concatenate([refpanel.frq_df(c).A2 == 'G' for c in args.chroms])
-    c = np.concatenate([refpanel.frq_df(c).A2 == 'C' for c in args.chroms])
-    gccont = g|c
+    print('reading snp info')
+    snps = pd.concat([refpanel.bim_df(c) for c in args.chroms], axis=0)
+    frq = pd.concat([refpanel.frq_df(c) for c in args.chroms], axis=0)
+    snps = ga.smart_merge(snps, frq[['SNP','MAF']])
     memo.reset(); gc.collect(); mem()
 
     print('reading sumstats, specifically:', args.use)
@@ -85,10 +85,16 @@ def main(args):
     typed = np.isfinite(ss)
     print('restricting to typed snps, of which there are', typed.sum())
     bhat = ss[typed]
+    snps = snps[typed]
 
-    maft = maf[typed]
-    gct = gccont[typed]
-    mem()
+    print('creating mhcmask')
+    mhcmask = ((snps.CHR == 6)&(snps.BP >= mhc[0])&(snps.BP <= mhc[1])).values
+
+    print('getting locus indices')
+    locus_inds = get_locus_inds(snps, loci, args.chroms)
+
+    maft = snps.MAF.values
+    del snps; gc.collect(); mem()
 
     t0 = time.time()
     for annot in annots:
@@ -99,14 +105,6 @@ def main(args):
         print('restricting to typed snps only')
         a = a[typed]
         memo.reset(); gc.collect(); mem()
-
-        if mhcmask is None:
-            print('creating mhcmask')
-            CHR = a.CHR.values
-            BP = a.BP.values
-            mhcmask = (CHR == 6)&(BP >= mhc[0])&(BP <= mhc[1])
-            print('getting locus indices')
-            locus_inds = get_locus_inds(a, loci, args.chroms)
 
         print('creating V')
         print('there are', (~np.isfinite(a[names].values)).sum(), 'nans in the annotation.',
@@ -262,11 +260,11 @@ if __name__ == '__main__':
             default='/groups/price/yakir/temp',
             help='path to an output file stem')
     parser.add_argument('--bhat-chr', #required=True,
-            default='/groups/price/yakir/data/sumstats/processed/CD.KG3_0.1/',
+            default='/groups/price/yakir/data/sumstats/processed/CD.KG3_50.0/',
             help='one or more paths to .bhat.gz files, without chr number or extension')
     parser.add_argument('--sannot-chr', nargs='+', #required=True,
-            default=['/groups/price/yakir/data/annot/basset/HaibK562MaxV0416102/prod0.lfc.',
-                '/groups/price/yakir/data/annot/basset/HaibK562Atf3V0416101/prod0.lfc.'],
+            default=['/groups/price/yakir/data/annot/basset/processed.a8/8988T/',
+                '/groups/price/yakir/data/annot/basset/processed.a8/A549/'],
             help='one or more paths to gzipped annot files, not including ' + \
                     'chromosome number or .sannot.gz extension')
     parser.add_argument('--use', default='bhat',
@@ -275,6 +273,8 @@ if __name__ == '__main__':
             help='clump togther close-by snps in the null')
     parser.add_argument('-center-on-v', default=False, action='store_true',
             help='mean-center based on magnitude of v rather than maf')
+    parser.add_argument('-thin-annot', default=False, action='store_true',
+            help='annot contains only one column and has no allele or snp information')
     parser.add_argument('--bfile-chr',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
                 '1000G.EUR.QC.',
