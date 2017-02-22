@@ -31,7 +31,6 @@ def main(args):
     print_snps['printsnp'] = True
     print(len(print_snps), 'print snps')
 
-    log = pd.DataFrame()
     for c in args.chroms:
         print('loading chr', c, 'of', args.chroms)
         # get refpanel snp metadata for this chromosome
@@ -40,7 +39,7 @@ def main(args):
         snps.printsnp.fillna(False, inplace=True)
         print(len(snps), 'snps in refpanel', len(snps.columns), 'columns, including metadata')
 
-        for ldblock, X, meta in refpanel.block_data(ldblocks, c, meta=snps):
+        for ldblock, X, meta, _ in refpanel.block_data(ldblocks, c, meta=snps):
             if meta.printsnp.sum() == 0:
                 print('no print snps found in this block')
                 continue
