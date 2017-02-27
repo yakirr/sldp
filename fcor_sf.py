@@ -44,15 +44,15 @@ def main(args):
     print('baseline annotations:', baseline_names)
 
     # read in ldblocks and remove ones that overlap mhc
-    loci = pd.read_csv(args.loci, delim_whitespace=True, header=None,
+    ldblocks = pd.read_csv(args.ldblocks, delim_whitespace=True, header=None,
             names=['CHR','start', 'end'])
-    mhcblocks = (loci.CHR == 'chr6') & (loci.end > mhc[0]) & (loci.start < mhc[1])
-    loci = loci[~mhcblocks]
-    print(len(loci), 'loci after removing MHC')
+    mhcblocks = (ldblocks.CHR == 'chr6') & (ldblocks.end > mhc[0]) & (ldblocks.start < mhc[1])
+    ldblocks = ldblocks[~mhcblocks]
+    print(len(ldblocks), 'ldblocks after removing MHC')
 
     print('getting locus indices')
     snps = pd.concat([refpanel.bim_df(c) for c in args.chroms], axis=0)
-    locus_inds = get_locus_inds(snps, loci, args.chroms)
+    ldblock_inds = get_locus_inds(snps, ldblocks, args.chroms)
     maf = pd.concat([refpanel.frq_df(c)[['MAF']] for c in args.chroms], axis=0).MAF.values
     del snps; gc.collect()
 
@@ -87,11 +87,16 @@ def main(args):
 
         for i, name in enumerate(names):
             print(i, name)
-            v = V[:,i]
-            nz = (v!=0) & np.isfinite(ss)
 
+            # restrict to the appropriate set of snps
+            if args.restrict_baseline:
+                nz = np.isfinite(ss) & (V[:,i] != 0)
+            else:
+                nz = np.isfinite(ss)
             if nz.sum() == 0:
                 continue
+
+            v = V[:,i].copy(); v[~nz] = 0
 
             # residualize out baseline model covariates
             print('accounting for baseline model')
@@ -102,44 +107,21 @@ def main(args):
                 vc[nz] = v[nz] - B[nz].dot(coeffs)
             else:
                 vc = v
-            v[~nz] = 0; vc[~nz] = 0
 
-            # compute q
-            qall = v*ss
-            qcall = vc*ss
+            # compute statistics
+            q = v*ss
+            qc = vc*ss
 
-            # compute the statistics
-            q = qall[nz]
-            qc = qcall[nz]
+            if args.flip_ldblocks:
+                q = np.array([
+                    np.nan_to_num(q[start:end]).sum()
+                    for start, end in ldblock_inds])
+                qc = np.array([
+                    np.nan_to_num(qc[start:end]).sum()
+                    for start, end in ldblock_inds])
 
             std = np.linalg.norm(q, ord=2)
             stdc = np.linalg.norm(qc, ord=2)
-
-            qloci = np.array([
-                np.nan_to_num(qall[start:end]).sum()
-                for start, end in locus_inds])
-            q2loci = np.array([
-                np.nan_to_num(qall[start:end]**2).sum()
-                for start, end in locus_inds])
-            q4loci = np.array([
-                np.nan_to_num(qall[start:end]**4).sum()
-                for start, end in locus_inds])
-            prod = (qloci**2).sum() - q2loci.sum()
-            prod_std = np.sqrt(
-                    2*((q2loci**2).sum() - q4loci.sum()))
-
-            qcloci = np.array([
-                np.nan_to_num(qcall[start:end]).sum()
-                for start, end in locus_inds])
-            qc2loci = np.array([
-                np.nan_to_num(qcall[start:end]**2).sum()
-                for start, end in locus_inds])
-            qc4loci = np.array([
-                np.nan_to_num(qcall[start:end]**4).sum()
-                for start, end in locus_inds])
-            prodc = (qcloci**2).sum() - qc2loci.sum()
-            prodc_std = np.sqrt(
-                    2*((qc2loci**2).sum() - qc4loci.sum()))
 
             results = results.append({
                 'pheno':nice_ss_name,
@@ -150,16 +132,6 @@ def main(args):
                 'v_norm2':np.linalg.norm(v[nz], ord=2),
                 'v_norm4':np.linalg.norm(v[nz], ord=4),
                 'v_norm2o4':np.linalg.norm(v[nz], ord=2)/np.linalg.norm(v[nz], ord=4),
-
-                'prod':prod,
-                'prod_std':prod_std,
-                'prod_z':prod/prod_std,
-                'prod_p':st.norm.sf(prod/prod_std, 0, 1),
-
-                'prodc':prodc,
-                'prodc_std':prodc_std,
-                'prodc_z':prodc/prodc_std,
-                'prodc_p':st.norm.sf(prodc/prodc_std, 0, 1),
 
                 'sum':q.sum(),
                 'sum_std':std,
@@ -199,13 +171,17 @@ if __name__ == '__main__':
             help='which set of processed sumstats to use')
     parser.add_argument('--baseline-sannot-chr', nargs='+',
             default=[])
+    parser.add_argument('-restrict-baseline', default=False, action='store_true',
+            help='zero out baseline model for snps not in support of primary annotation.')
+    parser.add_argument('-flip-ldblocks', default=False, action='store_true',
+            help='flip v in ld blocks rather than on individual snps')
     parser.add_argument('--bfile-chr',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
                 '1000G.EUR.QC.',
             help='path to plink bfile of reference panel to use, not including chrom num')
-    parser.add_argument('--loci',
-            default='/groups/price/yakir/data/reference/dixon_IMR90.TADs.hg19.bed',
-            help='path to UCSC bed file containing one bed interval per locus')
+    parser.add_argument('--ldblocks',
+            default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
+            help='path to UCSC bed file containing one bed interval per ld block')
     parser.add_argument('--chroms', nargs='+', type=int, default=range(1,23))
 
     args = parser.parse_args()

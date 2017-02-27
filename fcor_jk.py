@@ -12,7 +12,7 @@ import pyutils.iter as pyit
 import gprim.annotation as ga
 import gprim.dataset as gd; reload(gd)
 import pyutils.memo as memo
-import weights
+import weights; reload(weights)
 
 
 def mem():
@@ -43,6 +43,7 @@ def main(args):
     marginal_names = sum([a.names(22, True) for a in annots], [])
     baselineannots = [ga.Annotation(annot) for annot in args.baseline_sannot_chr]
     baseline_names = sum([a.names(22, True) for a in baselineannots], [])
+    bias_names = sum([[n+'.vTRv' for n in a.names(22)] for a in baselineannots+annots], [])
     print('baseline annotations:', baseline_names)
     print('marginal annotations:', marginal_names)
 
@@ -51,11 +52,18 @@ def main(args):
             names=['chr','start', 'end'])
     mhcblocks = (ldblocks.chr == 'chr6') & (ldblocks.end > mhc[0]) & (ldblocks.start < mhc[1])
     ldblocks = ldblocks[~mhcblocks]
+    ldblocks['filename'] = ldblocks.index.values
     print(len(ldblocks), 'ld blocks after removing MHC')
+    for annot in baselineannots+annots:
+        if os.path.exists(annot.filestem()+'ldblocks'):
+            myldblocks = pd.read_csv(annot.filestem()+'ldblocks', sep='\t')
+            ldblocks = pd.merge(ldblocks, myldblocks, how='left',
+                    on=['chr','start','end']).sort_values(by='filename')
+    ldblocks.set_index('filename', inplace=True)
 
     # read in sumstats and annots, and compute numerator and denominator of regression for
     # each ldblock. These will later be jackknifed
-    numerators = dict(); denominators = dict()
+    numerators = dict(); denominators = dict(); olddenominators = dict()
     t0 = time.time()
     for c in args.chroms:
         print(time.time()-t0, ': loading chr', c, 'of', args.chroms)
@@ -72,7 +80,7 @@ def main(args):
         print('merging')
         snps['Winv_ahat'] = ss[args.weightedss]
         snps['N'] = ss.N
-        snps['typed'] = snps.N.notnull()
+        snps['typed'] = snps.Winv_ahat.notnull()
 
         # read in annotations
         print('reading annotations')
@@ -93,7 +101,7 @@ def main(args):
                 print('no typed snps/hm3 snps in this block')
                 ldblocks.loc[ldblock.name, 'M_H'] = 0
                 continue
-            if (meta[marginal_names] == 0).values.all():
+            if (meta[baseline_names+marginal_names] == 0).values.all():
                 print('annotations are all 0 in this block')
                 ldblocks.loc[ldblock.name, 'M_H'] = 0
                 continue
@@ -103,6 +111,7 @@ def main(args):
             R2 = np.load(args.svd_stem+str(ldblock.name)+'.R2.npz')
             meta_t = meta[meta.typed]
             N = meta_t.N.mean()
+            biases = ldblocks.loc[ldblock.name, bias_names].values.astype(float)
 
             # multiply ahat by the weights
             Winv_RV_h = weights.invert_weights(
@@ -111,8 +120,17 @@ def main(args):
 
             numerators[ldblock.name] = \
                 (meta_t[baseline_names+marginal_names].T.dot(meta_t.Winv_ahat)/1e6).values
-            denominators[ldblock.name] = \
-                (meta_t[baseline_names+marginal_names].T.dot(Winv_RV_h[meta.typed])/1e6).values
+            D = meta_t[baseline_names+marginal_names].T.dot(Winv_RV_h[meta.typed]).values
+            olddenominators[ldblock.name] = D/1e6
+            if args.no_bc:
+                tr = 0
+            else:
+                tr = weights.trace_inv(R, R2, sigma2g, N,
+                        meta[baseline_names+marginal_names].values,
+                        typed=meta.typed, mode=args.weightedss)
+            D = D - tr * np.diag(biases) / refpanel.N()
+            D /= 1e6
+            denominators[ldblock.name] = D
 
     # start jackknifing
     print('jackknifing')
@@ -222,6 +240,8 @@ if __name__ == '__main__':
             help='number of jackknife blocks to use')
     parser.add_argument('--weight-jk', default='none',
             help='what to weight the jackknife by. Options are none, snps, annot')
+    parser.add_argument('-no-bc', default=False, action='store_true',
+            help='dont use bias correction for denominator of regression')
     parser.add_argument('--ld-blocks',
             default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
             help='path to UCSC bed file containing one bed interval per ld block')

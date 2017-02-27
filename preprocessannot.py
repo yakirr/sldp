@@ -18,6 +18,7 @@ def main(args):
     mhc = [25684587, 35455756]
     refpanel = gd.Dataset(args.bfile_chr)
     annots = [ga.Annotation(annot) for annot in args.sannot_chr]
+    baselineannots = [ga.Annotation(annot) for annot in args.baseline_sannot_chr]
 
     # read in ld blocks, remove MHC, read SNPs to print
     ldblocks = pd.read_csv(args.ld_blocks, delim_whitespace=True, header=None,
@@ -40,8 +41,16 @@ def main(args):
             print(len(snps), 'snps in refpanel', len(snps.columns), 'columns, including metadata')
 
             # read in annotation
+            print('reading baseline annotations (assuming theyre already synced to refpanel')
+            baseline_names = []
+            for bannot in baselineannots:
+                mynames = bannot.names(22)
+                baseline_names += mynames # names of annotations
+                print(time.time()-t0, ': reading annot', annot.filestem())
+                snps = pd.concat([snps, bannot.sannot_df(c)[mynames]], axis=1)
             print('reading annot', annot.filestem())
             names = annot.names(c) # names of annotations
+            allnames = baseline_names + names
             namesR = [n+'.R' for n in names] # names of results
             a = annot.sannot_df(c)
             if 'SNP' in a.columns:
@@ -74,15 +83,26 @@ def main(args):
                 if (meta[names] == 0).values.all():
                     print('annotations are all 0 in this block')
                     snps.loc[ind, namesR] = 0
-                    continue
-                mask = meta.printsnp.values
-                V = meta[names].values
-                snps.loc[ind[mask], namesR] = X[:,mask].T.dot(X.dot(V)) / X.shape[0]
+                    VTRV = pd.DataFrame(columns=allnames, index=allnames).fillna(value=0)
+                    VTV = pd.DataFrame(columns=allnames, index=allnames).fillna(value=0)
+                else:
+                    mask = meta.printsnp.values
+                    V = meta[allnames].values
+                    XV = X.dot(V)
+                    snps.loc[ind[mask], namesR] = \
+                            X[:,mask].T.dot(XV[:,-len(names)]) / X.shape[0]
+                    VTRV = pd.DataFrame(XV.T.dot(XV)/X.shape[0],
+                            columns=allnames, index=allnames)
+                    VTV = pd.DataFrame(V.T.dot(V), columns=allnames, index=allnames)
+                VTRV.to_csv(annot.filestem()+'VTRV.'+str(ldblock.name), sep='\t')
+                VTV.to_csv(annot.filestem()+'VTV.'+str(ldblock.name), sep='\t')
 
             print('writing output')
             with gzip.open('{}{}.RV.gz'.format(annot.filestem(), c),'w') as f:
                 snps.loc[snps.printsnp,namesR].to_csv(
                         f, index=False, sep='\t')
+            ldblocks.fillna(value=0).to_csv(
+                    annot.filestem()+'ldblocks', index=False, sep='\t')
 
             del snps; memo.reset(); gc.collect()
 
@@ -93,6 +113,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--sannot-chr', nargs='+', #required=True,
             default=['/groups/price/yakir/data/annot/basset/processed.a8/8988T/'],
+            help='path to sannot.gz files, not including chromosome')
+    parser.add_argument('--baseline-sannot-chr', nargs='+', #required=True,
+            default=[],
             help='path to sannot.gz files, not including chromosome')
     parser.add_argument('--print-snps',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/'+\

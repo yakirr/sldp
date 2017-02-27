@@ -2,6 +2,12 @@ from __future__ import print_function, division
 import numpy as np
 
 # TODO: improve weighting scheme computation
+def trace_inv(R, R2, sigma2g, N, x, typed=None, mode='Winv_ahat_h'):
+    if typed is None:
+        typed = np.isfinite(x.reshape((len(x),-1)).sum(axis=1))
+    U = R['U'][typed,:]; svs=R['svs']
+    UUTjj = np.linalg.norm(U, axis=0)**2
+    return (UUTjj/(sigma2g*svs**2+svs/N)).sum()
 
 def invert_weights(R, R2, sigma2g, N, x, typed=None, mode='Winv_ahat_h'):
     if typed is None:
