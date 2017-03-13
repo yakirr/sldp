@@ -47,7 +47,15 @@ def main(args):
             X_ = X[:,mask]
 
             print('\tcomputing SVD of R_print')
-            U_, svs_, _ = np.linalg.svd(X_.T); svs_ = svs_**2 / X_.shape[0]
+            def rightsvd(A):
+                try:
+                    U_, svs_, _ = np.linalg.svd(A.T); svs_ = svs_**2 / A.shape[0]
+                except np.linalg.linalg.LinAlgError:
+                    print('\t\tresorting to svd of XTX')
+                    U_, svs_, _ = np.linalg.svd(A.T.dot(A)); svs_ = svs_ / A.shape[0]
+                return U_, svs_
+
+            U_, svs_ = rightsvd(X_)
             k = np.argmax(np.cumsum(svs_)/svs_.sum() >= args.spectrum_percent / 100.)
             print('\treduced rank of', k, 'out of', meta.printsnp.sum(), 'printed snps')
             np.savez('{}{}.R'.format(args.outstem, ldblock.name), U=U_[:,:k], svs=svs_[:k])

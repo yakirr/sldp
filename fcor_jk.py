@@ -41,25 +41,21 @@ def main(args):
     nice_ss_name = args.ssjk_chr.split('/')[-2].split('.')[0]
     annots = [ga.Annotation(annot) for annot in args.sannot_chr]
     marginal_names = sum([a.names(22, True) for a in annots], [])
+    marginal_names = [n for n in marginal_names if '.R' in n]
     baselineannots = [ga.Annotation(annot) for annot in args.baseline_sannot_chr]
     baseline_names = sum([a.names(22, True) for a in baselineannots], [])
-    bias_names = sum([[n+'.vTRv' for n in a.names(22)] for a in baselineannots+annots], [])
+    baseline_names = [n for n in baseline_names if True or '.R' in n] #TODO: remove the "not"
+        # it's currently this way so that v gets added into the regression
+    bias_names = sum([[n for n in a.names(22) if '.R' not in n] for a in baselineannots+annots], [])
     print('baseline annotations:', baseline_names)
     print('marginal annotations:', marginal_names)
+    print('bias names:', bias_names)
 
     # read in ldblocks and remove ones that overlap mhc
     ldblocks = pd.read_csv(args.ld_blocks, delim_whitespace=True, header=None,
             names=['chr','start', 'end'])
     mhcblocks = (ldblocks.chr == 'chr6') & (ldblocks.end > mhc[0]) & (ldblocks.start < mhc[1])
     ldblocks = ldblocks[~mhcblocks]
-    ldblocks['filename'] = ldblocks.index.values
-    print(len(ldblocks), 'ld blocks after removing MHC')
-    for annot in baselineannots+annots:
-        if os.path.exists(annot.filestem()+'ldblocks'):
-            myldblocks = pd.read_csv(annot.filestem()+'ldblocks', sep='\t')
-            ldblocks = pd.merge(ldblocks, myldblocks, how='left',
-                    on=['chr','start','end']).sort_values(by='filename')
-    ldblocks.set_index('filename', inplace=True)
 
     # read in sumstats and annots, and compute numerator and denominator of regression for
     # each ldblock. These will later be jackknifed
@@ -69,33 +65,56 @@ def main(args):
         print(time.time()-t0, ': loading chr', c, 'of', args.chroms)
         # get refpanel snp metadata and sumstats for this chromosome
         snps = refpanel.bim_df(c)
+        if args.ldscores_chr is not None:
+            l2 = pd.read_csv(args.ldscores_chr+str(c)+'.l2.ldscore.gz', sep='\t')
+        snps = pd.merge(snps, l2[['SNP','L2']], on='SNP', how='left')
         print(len(snps), 'snps in refpanel', len(snps.columns), 'columns, including metadata')
         print('reading sumstats')
         ss = pd.read_csv(args.ssjk_chr+str(c)+'.ss.jk.gz', sep='\t',
                 usecols=['N',args.weightedss])
         sigma2g = pd.read_csv(args.ssjk_chr+'info', sep='\t').sigma2g.values[0]
-        print(np.isnan(ss[args.weightedss]).sum(), 'nans out of', len(ss))
+        print(np.isnan(ss[args.weightedss]).sum(), 'sumstats nans out of', len(ss))
 
         # merge annot and sumstats
         print('merging')
         snps['Winv_ahat'] = ss[args.weightedss]
         snps['N'] = ss.N
         snps['typed'] = snps.Winv_ahat.notnull()
+        snps['MAF'] = refpanel.frq_df(c).MAF.values
+        snps.loc[snps.typed & snps.L2.isnull()] = 1
 
         # read in annotations
         print('reading annotations')
         for annot in baselineannots+annots:
-            mynames = annot.names(22, True) # names of annotations
+            mynames_ = annot.names(22, True) # names of annotations
+            mynames = []
+            if annot in baselineannots:
+                mynames += [n for n in mynames_ if n in baseline_names]
+            else:
+                mynames += [n for n in mynames_ if n in marginal_names]
             print(time.time()-t0, ': reading annot', annot.filestem())
-            snps = pd.concat([snps, annot.RV_df(c)], axis=1)
+            print('adding', mynames)
+            snps = pd.concat([snps, annot.RV_df(c)[mynames]], axis=1)
 
             print('there are', (~np.isfinite(snps[mynames].values)).sum(),
                     'nans in the annotation. This number should be 0.')
 
+        # ignore some regression snps if necessary
+        if args.ldscore_percentile is not None:
+            to_threshold = 'L2'
+            thresh = np.percentile(np.nan_to_num(snps[snps.typed][to_threshold]),
+                    args.ldscore_percentile)
+            print('thresholding', to_threshold, 'at', thresh)
+            print('going from', snps.typed.sum(), 'regression snps')
+            snps.loc[snps[to_threshold] <= thresh, 'typed'] = False
+            print('to', snps.typed.sum(), 'regression snps')
+
         # perform computations
         for ldblock, X, meta, ind in refpanel.block_data(
                 ldblocks, c, meta=snps, genos=False, verbose=0):
-            # print(meta.typed.sum(), 'typed snps')
+            # print(ldblock)
+            # print(len(meta), 'snps, of which', meta.typed.sum(), 'are typed snps')
+            # print(len(ind), 'is length of ind')
             if meta.typed.sum() == 0 or \
                     not os.path.exists(args.svd_stem+str(ldblock.name)+'.R.npz'):
                 print('no typed snps/hm3 snps in this block')
@@ -105,13 +124,15 @@ def main(args):
                 print('annotations are all 0 in this block')
                 ldblocks.loc[ldblock.name, 'M_H'] = 0
                 continue
-            ldblocks.loc[ldblock.name, 'M_H'] = len(meta)
+            ldblocks.loc[ldblock.name, 'M_H'] = meta.typed.sum()
 
-            R = np.load(args.svd_stem+str(ldblock.name)+'.R.npz')
-            R2 = np.load(args.svd_stem+str(ldblock.name)+'.R2.npz')
+            if args.weightedss != "Winv_ahat_I":
+                R = np.load(args.svd_stem+str(ldblock.name)+'.R.npz')
+                R2 = np.load(args.svd_stem+str(ldblock.name)+'.R2.npz')
+            else:
+                R = None; R2 = None
             meta_t = meta[meta.typed]
             N = meta_t.N.mean()
-            biases = ldblocks.loc[ldblock.name, bias_names].values.astype(float)
 
             # multiply ahat by the weights
             Winv_RV_h = weights.invert_weights(
@@ -119,18 +140,21 @@ def main(args):
                     typed=meta.typed, mode=args.weightedss)
 
             numerators[ldblock.name] = \
-                (meta_t[baseline_names+marginal_names].T.dot(meta_t.Winv_ahat)/1e6).values
-            D = meta_t[baseline_names+marginal_names].T.dot(Winv_RV_h[meta.typed]).values
+                (meta_t[baseline_names+marginal_names].T.dot(
+                    meta_t.Winv_ahat)/1e6).values
+            D = meta_t[baseline_names+marginal_names].T.dot(
+                    Winv_RV_h[meta.typed]).values
+
             olddenominators[ldblock.name] = D/1e6
-            if args.no_bc:
-                tr = 0
-            else:
+            if not args.no_bc:
+                biases = pd.read_csv(annots[-1].filestem()+'VTRV.'+str(ldblock.name), sep='\t',
+                        index_col=0)
+                biases = biases.loc[bias_names, bias_names].values
                 tr = weights.trace_inv(R, R2, sigma2g, N,
                         meta[baseline_names+marginal_names].values,
                         typed=meta.typed, mode=args.weightedss)
-            D = D - tr * np.diag(biases) / refpanel.N()
-            D /= 1e6
-            denominators[ldblock.name] = D
+                D = D - tr * biases / refpanel.N()
+            denominators[ldblock.name] = D / 1e6
 
     # start jackknifing
     print('jackknifing')
@@ -158,8 +182,8 @@ def main(args):
                 [denominators[l] for l in ldblock_ind]))
             jksizes.append(np.sum(ldblocks.iloc[i:j].M_H.values))
             jkweights.append(np.diagonal(jkdenominators[-1]))
-    print('jk sizes:', jksizes)
-    print('jk weights:', jkweights)
+    # print('jk sizes:', jksizes)
+    # print('jk weights:', jkweights)
     ## compute LOO sufficient statistics
     loonumerators = []; loodenominators = []
     for i in range(len(jknumerators)):
@@ -168,11 +192,15 @@ def main(args):
     ## produce estimates and SE's for each marginal annotation
     def get_est(num, denom, name):
         k = len(baseline_names); i = marginal_names.index(name)
-        ind = range(k)+[k+i]
+        avoid = baseline_names.index(name) if name in baseline_names else -1
+        ind = [j for j in range(k) if j != avoid] + [k+i]
         num = num[ind]
         denom = denom[ind][:,ind]
-        return np.linalg.solve(denom, num)[-1]
-    def jackknife_se(est, loonumerators, loodenominators, jkweights):
+        try:
+            return np.linalg.solve(denom, num)[-1]
+        except np.linalg.linalg.LinAlgError:
+            return np.nan
+    def jackknife_se(est, loonumerators, loodenominators, jkweights, name):
         m = np.array(jkweights)
         theta_notj = [get_est(nu, de, name) for nu, de in zip(loonumerators, loodenominators)]
         g = len(jkweights)
@@ -185,30 +213,61 @@ def main(args):
     results = pd.DataFrame()
     for i, name in enumerate(marginal_names):
         total_est = get_est(sum(jknumerators), sum(jkdenominators), name)
-        loo_est = [get_est(n, d, name) for n, d in zip(loonumerators, loodenominators)]
-        if args.weight_jk == 'none':
-            se = jackknife_se(total_est, loonumerators, loodenominators, [1]*len(jkweights))
-        elif args.weight_jk == 'snps':
-            se = jackknife_se(total_est, loonumerators, loodenominators, jksizes)
-        elif args.weight_jk == 'annot':
-            se = jackknife_se(total_est, loonumerators, loodenominators,
-                    [j[len(baseline_names)+i] for j in jkweights])
-        else: # annotsqrt
-            se = jackknife_se(total_est, loonumerators, loodenominators,
-                    [np.sqrt(j[len(baseline_names)+i]) for j in jkweights])
+        if args.sf or args.sf_approx:
+            k = marginal_names.index(name)
+            q = np.array([num[len(baseline_names)+k] for num in jknumerators])
+            score = q.sum()
+            if args.sf_approx:
+                se = np.sqrt(np.sum(q**2))
+            else:
+                null = []
+                T = 100000
+                for i in range(T):
+                    s = (-1)**np.random.binomial(1,0.5,size=len(q))
+                    null.append(s.dot(q))
+                p = ((np.abs(null) >= np.abs(score)).sum() + 1) / float(T)
+                se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
+        else:
+            score = total_est
+            loo_est = [get_est(n, d, name) for n, d in zip(loonumerators, loodenominators)]
+            if args.weight_jk == 'none':
+                se = jackknife_se(total_est, loonumerators, loodenominators, [1]*len(jkweights),
+                        name)
+            elif args.weight_jk == 'snps':
+                se = jackknife_se(total_est, loonumerators, loodenominators, jksizes, name)
+            elif args.weight_jk == 'annot':
+                se = jackknife_se(total_est, loonumerators, loodenominators,
+                        [j[len(baseline_names)+i] for j in jkweights], name)
+            else: # annotsqrt
+                se = jackknife_se(total_est, loonumerators, loodenominators,
+                        [np.sqrt(j[len(baseline_names)+i]) for j in jkweights], name)
         results = results.append({
             'pheno':nice_ss_name,
             'annot':name,
-            'est':total_est,
+            'est':score,
             'se':se,
-            'z':total_est/se,
-            'p':st.chi2.sf((total_est/se)**2,1)},
+            'z':score/se,
+            'p':st.chi2.sf((score/se)**2,1)},
             ignore_index=True)
 
     print('writing results')
     print(results)
-    results.to_csv(args.outfile_stem + '.jk.gwresults', sep='\t', index=False)
+    results.to_csv(args.outfile_stem + '.jk.gwresults', sep='\t', index=False, na_rep='nan')
     print('done')
+    # print('==== point estimate of full joint fit ===')
+    # print(baseline_names + marginal_names)
+    # N = sum(numerators.values())
+    # D = sum(denominators.values())
+    # oD = sum(olddenominators.values())
+    # print(N)
+    # print(D)
+    # print(oD)
+    # print()
+    # try:
+    #     print(np.linalg.solve(D,N))
+    #     print(np.linalg.solve(oD,N))
+    # except np.linalg.linalg.LinAlgError:
+    #     print('singular matrix, could not get joint fit')
 
 
 if __name__ == '__main__':
@@ -227,12 +286,21 @@ if __name__ == '__main__':
                     'chromosome number or .sannot.gz extension')
     parser.add_argument('--weightedss', default='Winv_ahat_h',
             help='which set of processed sumstats to use')
+    parser.add_argument('-sf', default=False, action='store_true',
+            help='print z score for marginal sign-flip test')
+    parser.add_argument('-sf-approx', default=False, action='store_true',
+            help='print z score for marginal sign-flip test')
     parser.add_argument('--baseline-sannot-chr', nargs='+',
             default=[])
     parser.add_argument('--bfile-chr',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
                 '1000G.EUR.QC.hm3_noMHC.',
             help='path to plink bfile of reference panel to use, not including chrom num')
+    parser.add_argument('--ldscores-chr', default=None,
+            help='path to ldcores computed to all potentially causal snps. ld scores are '+\
+                    'only needed at regression snps')
+    parser.add_argument('--ldscore-percentile', default=None,
+            help='snps with ld score below this threshold wont be used for regression')
     parser.add_argument('--svd-stem',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/svds_95percent/',
             help='path to truncated svds of reference panel, by LD block')

@@ -1,20 +1,36 @@
 from __future__ import print_function, division
 import numpy as np
 
-# TODO: improve weighting scheme computation
-def trace_inv(R, R2, sigma2g, N, x, typed=None, mode='Winv_ahat_h'):
-    if typed is None:
-        typed = np.isfinite(x.reshape((len(x),-1)).sum(axis=1))
-    U = R['U'][typed,:]; svs=R['svs']
-    UUTjj = np.linalg.norm(U, axis=0)**2
-    return (UUTjj/(sigma2g*svs**2+svs/N)).sum()
-
-def invert_weights(R, R2, sigma2g, N, x, typed=None, mode='Winv_ahat_h'):
+# R: SVD of (R, restricted to regression SNPs)
+# R2: SVD of (R^2, restricted to regression SNPs)
+# l_all: ld scores to all causal snps
+# l_reg: ld scores to all regression snps only
+def trace_inv(R, R2, l_all, l_reg, sigma2g, N, x, typed=None, mode='Winv_ahat_h'):
     if typed is None:
         typed = np.isfinite(x.reshape((len(x),-1)).sum(axis=1))
 
+    if mode == 'Winv_ahat_I':
+        return typed.sum()
+    elif mode == 'Winv_ahat_l':
+        return (1./(sigma2g*l_all[typed]*l_reg[typed] + l_reg[typed]/N)).sum()
+    elif mode == 'Winv_ahat_h':
+        U = R['U'][typed,:]; svs=R['svs']
+        UUTjj = np.linalg.norm(U, axis=0)**2
+        return (UUTjj/(sigma2g*svs**2+svs/N)).sum()
+
+def invert_weights(R, R2, l_all, l_reg, sigma2g, N, x, typed=None, mode='Winv_ahat_h'):
+    if typed is None:
+        typed = np.isfinite(x.reshape((len(x),-1)).sum(axis=1))
+
+    # trivial weights
+    if mode == 'Winv_ahat_I':
+        result = x
+    # heuristic, assuming ldsc weights assumptions
+    elif mode == 'Winv_ahat_l':
+        result = np.full(x.shape, np.nan)
+        result[typed] = x[typed] / (sigma2g*l_all[typed]*l_reg[typed] + l_reg[typed]/N)
     # heuristic, with large-N approximation
-    if mode == 'Winv_ahat_hlN':
+    elif mode == 'Winv_ahat_hlN':
         U = R['U'][typed,:]; svs=R['svs']
         result = np.full(x.shape, np.nan)
         result[typed] = (U/(svs**2)).dot(U.T.dot(x[typed]))

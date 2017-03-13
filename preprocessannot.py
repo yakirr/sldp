@@ -41,13 +41,13 @@ def main(args):
             print(len(snps), 'snps in refpanel', len(snps.columns), 'columns, including metadata')
 
             # read in annotation
-            print('reading baseline annotations (assuming theyre already synced to refpanel')
+            print('reading baseline annotations')
             baseline_names = []
             for bannot in baselineannots:
                 mynames = bannot.names(22)
                 baseline_names += mynames # names of annotations
-                print(time.time()-t0, ': reading annot', annot.filestem())
-                snps = pd.concat([snps, bannot.sannot_df(c)[mynames]], axis=1)
+                print(time.time()-t0, ': reading annot', bannot.filestem())
+                snps = ga.reconciled_to(snps, bannot.sannot_df(c), mynames, missing_val=0)
             print('reading annot', annot.filestem())
             names = annot.names(c) # names of annotations
             allnames = baseline_names + names
@@ -55,9 +55,6 @@ def main(args):
             a = annot.sannot_df(c)
             if 'SNP' in a.columns:
                 print('not a thinannot => doing full reconciliation of snps and allele coding')
-                if any(a.SNP != snps.SNP):
-                    print('ERROR: refpanel and annot need to have same SNPs in same order')
-                    exit()
                 snps = ga.reconciled_to(snps, a, names, missing_val=0)
             else:
                 print('detected thinannot, so assuming that annotation is synched to refpanel')
@@ -67,13 +64,15 @@ def main(args):
             print('merging in print_snps')
             snps = pd.merge(snps, print_snps, how='left', on='SNP')
             snps.printsnp.fillna(False, inplace=True)
+            snps.printsnp.astype(bool)
 
             # put on per-normalized-genotype scale
             if not args.per_norm_genotype:
                 print('adjusting for maf')
-                snps[names] = snps[names]*np.sqrt(2*snps.MAF.values*(1-snps.MAF.values))[:,None]
+                snps[names] = snps[names].values * \
+                        np.sqrt(2*snps.MAF.values*(1-snps.MAF.values))[:,None]
 
-            snps = pd.concat([snps, pd.DataFrame(np.zeros(a[names].shape), columns=namesR)], axis=1)
+            snps = pd.concat([snps, pd.DataFrame(np.zeros(snps[names].shape), columns=namesR)], axis=1)
 
             for ldblock, X, meta, ind in refpanel.block_data(ldblocks, c, meta=snps):
                 if meta.printsnp.sum() == 0:
@@ -90,19 +89,22 @@ def main(args):
                     V = meta[allnames].values
                     XV = X.dot(V)
                     snps.loc[ind[mask], namesR] = \
-                            X[:,mask].T.dot(XV[:,-len(names)]) / X.shape[0]
+                            X[:,mask].T.dot(XV[:,-len(names):]) / X.shape[0]
                     VTRV = pd.DataFrame(XV.T.dot(XV)/X.shape[0],
                             columns=allnames, index=allnames)
                     VTV = pd.DataFrame(V.T.dot(V), columns=allnames, index=allnames)
-                VTRV.to_csv(annot.filestem()+'VTRV.'+str(ldblock.name), sep='\t')
-                VTV.to_csv(annot.filestem()+'VTV.'+str(ldblock.name), sep='\t')
+
+                if not args.no_cov:
+                    VTRV.to_csv(annot.filestem()+args.outfile_suffix+'VTRV.'+str(ldblock.name),
+                            sep='\t')
+                    VTV.to_csv(annot.filestem()+args.outfile_suffix+'VTV.'+str(ldblock.name),
+                            sep='\t')
 
             print('writing output')
-            with gzip.open('{}{}.RV.gz'.format(annot.filestem(), c),'w') as f:
-                snps.loc[snps.printsnp,namesR].to_csv(
+            with gzip.open('{}{}{}.RV.gz'.format(annot.filestem(), args.outfile_suffix, c),
+                    'w') as f:
+                snps.loc[snps.printsnp,['SNP','A1','A2']+names+namesR].to_csv(
                         f, index=False, sep='\t')
-            ldblocks.fillna(value=0).to_csv(
-                    annot.filestem()+'ldblocks', index=False, sep='\t')
 
             del snps; memo.reset(); gc.collect()
 
@@ -125,6 +127,8 @@ if __name__ == '__main__':
     parser.add_argument('-per-norm-genotype', action='store_true', default=False,
             help='assume that v is in units of per normalized genotype rather than per ' +\
                     'allele')
+    parser.add_argument('-no-cov', action='store_true', default=False,
+            help='dont write covariance matrices for each block')
     parser.add_argument('--bfile-chr',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
                 '1000G.EUR.QC.',
@@ -133,6 +137,8 @@ if __name__ == '__main__':
             default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
             help='path to UCSC bed file containing one bed interval per LD' + \
                     ' block')
+    parser.add_argument('--outfile-suffix', default='',
+            help='suffix to add to outputfile')
     parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int)
 
     args = parser.parse_args()
