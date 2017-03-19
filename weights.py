@@ -28,7 +28,8 @@ def invert_weights(R, R2, l_all, l_reg, sigma2g, N, x, typed=None, mode='Winv_ah
     # heuristic, assuming ldsc weights assumptions
     elif mode == 'Winv_ahat_l':
         result = np.full(x.shape, np.nan)
-        result[typed] = x[typed] / (sigma2g*l_all[typed]*l_reg[typed] + l_reg[typed]/N)
+        result[typed] = x[typed] / \
+                (sigma2g*l_all[typed]*l_reg[typed] + l_reg[typed]/N)[:,None]
     # heuristic, with large-N approximation
     elif mode == 'Winv_ahat_hlN':
         U = R['U'][typed,:]; svs=R['svs']

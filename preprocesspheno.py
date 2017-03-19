@@ -26,7 +26,7 @@ def main(args):
     print('{} snps, {}-{} individuals (avg: {})'.format(
         len(ss), np.min(ss.N), np.max(ss.N), np.mean(ss.N)))
     ss = pd.merge(ss, svd_snps[['SNP']], on='SNP', how='inner')
-    print(len(ss), 'snps typed after removing MHC')
+    print(len(ss), 'snps typed')
 
     # read ld scores
     print('reading in ld scores')
@@ -37,7 +37,7 @@ def main(args):
                     for c in range(1,23)])
     print(len(ld), 'snps with ld scores')
     ssld = pd.merge(ss, ld, on='SNP', how='left')
-    print(len(ssld), 'hm3 snps with sumstats after merge. Assuming MHC snps arent typed')
+    print(len(ssld), 'hm3 snps with sumstats after merge.')
 
     # estimate heritability using aggregate estimator
     meanchi2 = (ssld.Z**2).mean()

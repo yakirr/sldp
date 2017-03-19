@@ -67,10 +67,11 @@ def main(args):
             snps.printsnp.astype(bool)
 
             # put on per-normalized-genotype scale
-            if not args.per_norm_genotype:
-                print('adjusting for maf')
-                snps[names] = snps[names].values * \
-                        np.sqrt(2*snps.MAF.values*(1-snps.MAF.values))[:,None]
+            if args.alpha != -1:
+                print('scaling by maf according to alpha=', args.alpha)
+                snps[names] = snps[names].values*\
+                        np.power(2*snps.MAF.values*(1-snps.MAF.values),
+                                (1.+args.alpha)/2)[:,None]
 
             snps = pd.concat([snps, pd.DataFrame(np.zeros(snps[names].shape), columns=namesR)], axis=1)
 
@@ -124,9 +125,10 @@ if __name__ == '__main__':
                     '1000G_hm3_noMHC.rsid',
             help='The set of snps for which to print the processed annot')
 
-    parser.add_argument('-per-norm-genotype', action='store_true', default=False,
-            help='assume that v is in units of per normalized genotype rather than per ' +\
-                    'allele')
+    parser.add_argument('--alpha', type=float, default=-0.3,
+        help='scale annotation values by sqrt(2*maf(1-maf))^{alpha+1}. '+\
+                '-1 means assume things are already per-normalized-genotype, '+\
+                '0 means assume they were per allele. Armin says -0.3.')
     parser.add_argument('-no-cov', action='store_true', default=False,
             help='dont write covariance matrices for each block')
     parser.add_argument('--bfile-chr',
