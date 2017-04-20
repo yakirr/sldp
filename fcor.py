@@ -225,11 +225,13 @@ def main(args):
         k = marginal_names.index(name)
         q = np.array([num[len(baseline_names)+k] for num in jknumerators])
         score = q.sum()
+        optscore = np.abs(q).sum()
         se = np.sqrt(np.sum(q**2))
         results.loc[i,'sfapprox_score'] = score
         results.loc[i,'sfapprox_se'] = se
         results.loc[i,'sfapprox_z'] = score/se
         results.loc[i,'sfapprox_p'] = st.chi2.sf((score/se)**2,1)
+        results.loc[i,'opt_z'] = optscore/se
 
         # sf exact
         null = []
