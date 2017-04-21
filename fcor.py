@@ -15,10 +15,6 @@ import pyutils.memo as memo
 import weights; reload(weights)
 
 
-def mem():
-    print('memory usage:', resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1000, 'Mb')
-
-
 def get_locus_inds(snps, loci, chroms):
     loci.sort_values(by='CHR', inplace=True)
     locusstarts = np.array([])
@@ -46,7 +42,7 @@ def main(args):
 
     baselineannots = [ga.Annotation(annot) for annot in args.baseline_sannot_chr]
     baseline_names = sum([a.names(22, True) for a in baselineannots], [])
-    baseline_names = [n for n in baseline_names if True]
+    baseline_names = [n for n in baseline_names if n=='minor1.R']
 
     print('baseline annotations:', baseline_names)
     print('marginal annotations:', marginal_names)
@@ -153,9 +149,8 @@ def main(args):
             numerators[ldblock.name] = \
                 (meta_t[baseline_names+marginal_names].T.dot(
                     meta_t.Winv_ahat)).values/1e6
-            D = meta_t[baseline_names+marginal_names].T.dot(
+            denominators[ldblock.name] = meta_t[baseline_names+marginal_names].T.dot(
                     Winv_RV[meta.typed]).values/1e6
-            denominators[ldblock.name] = D
         memo.reset()
 
     # start jackknifing
@@ -224,6 +219,17 @@ def main(args):
         # sf approx
         k = marginal_names.index(name)
         q = np.array([num[len(baseline_names)+k] for num in jknumerators])
+
+        # (find the bias of the coin flips if there's a baseline annotation)
+        if len(baseline_names) > 0:
+            u = np.array([denom[0,len(baseline_names)+k] for denom in jkdenominators])
+            w = np.array([denom[0,0] for denom in jkdenominators])
+            mu = u.sum()/np.linalg.norm(u, ord=1)
+        else:
+            u = np.zeros(len(q))
+            mu = 0
+        mu = mu/2 + 0.5
+
         score = q.sum()
         optscore = np.abs(q).sum()
         se = np.sqrt(np.sum(q**2))
@@ -235,10 +241,18 @@ def main(args):
 
         # sf exact
         null = []
+        test = []
         T = 100000
+        print(((np.sign(u) == 0)&(q != 0)).sum())
+        print((np.sign(u)==0).sum())
+        print((np.sign(w)==0).sum())
+
+        import pdb; pdb.set_trace()
         for t in range(T):
-            s = (-1)**np.random.binomial(1,0.5,size=len(q))
+            s = (-1)**np.random.binomial(1,mu,size=len(q))
+            s = -s*np.sign(u)
             null.append(s.dot(q))
+            test.append(s.dot(u))
         p = ((np.abs(null) >= np.abs(score)).sum()) / float(T)
         p = min(max(p,1./T), 1)
         se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
@@ -270,20 +284,6 @@ def main(args):
     print(results)
     results.to_csv(args.outfile_stem + '.gwresults', sep='\t', index=False, na_rep='nan')
     print('done')
-    # print('==== point estimate of full joint fit ===')
-    # print(baseline_names + marginal_names)
-    # N = sum(numerators.values())
-    # D = sum(denominators.values())
-    # oD = sum(olddenominators.values())
-    # print(N)
-    # print(D)
-    # print(oD)
-    # print()
-    # try:
-    #     print(np.linalg.solve(D,N))
-    #     print(np.linalg.solve(oD,N))
-    # except np.linalg.linalg.LinAlgError:
-    #     print('singular matrix, could not get joint fit')
 
 
 if __name__ == '__main__':
