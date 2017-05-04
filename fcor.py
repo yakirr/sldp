@@ -42,7 +42,8 @@ def main(args):
 
     baselineannots = [ga.Annotation(annot) for annot in args.baseline_sannot_chr]
     baseline_names = sum([a.names(22, True) for a in baselineannots], [])
-    baseline_names = [n for n in baseline_names if n=='minor1.R']
+    # baseline_names = [n for n in baseline_names if n=='minor1.R']
+    baseline_names = [n for n in baseline_names if '.R' in n]
 
     print('baseline annotations:', baseline_names)
     print('marginal annotations:', marginal_names)
@@ -222,13 +223,28 @@ def main(args):
 
         # (find the bias of the coin flips if there's a baseline annotation)
         if len(baseline_names) > 0:
-            u = np.array([denom[0,len(baseline_names)+k] for denom in jkdenominators])
-            w = np.array([denom[0,0] for denom in jkdenominators])
-            mu = u.sum()/np.linalg.norm(u, ord=1)
-        else:
-            u = np.zeros(len(q))
-            mu = 0
-        mu = mu/2 + 0.5
+            num = sum(jknumerators)
+            denom = sum(jkdenominators)
+            ATA = denom[:len(baseline_names)][:,:len(baseline_names)]
+            ATy = num[:len(baseline_names)]
+            ATx = denom[:len(baseline_names)][:,len(baseline_names)+k]
+            muy = np.linalg.solve(ATA, ATy)
+            mux = np.linalg.solve(ATA, ATx)
+            xiaiT = np.array([d[len(baseline_names)+k,:len(baseline_names)]
+                for d in jkdenominators])
+            yiaiT = np.array([nu[:len(baseline_names)]
+                for nu in jknumerators])
+            aiaiT = np.array([d[:len(baseline_names)][:,:len(baseline_names)]
+                for d in jkdenominators])
+            q = q - xiaiT.dot(muy) - yiaiT.dot(mux) + aiaiT.dot(muy).dot(mux)
+
+            # aiyi = np.array([num[0] for num in jknumerators]); ay = aiyi.sum()
+            # aixi = np.array([denom[0,len(baseline_names)+k] for denom in jkdenominators])
+            # ax = aixi.sum()
+            # aiai = np.array([denom[0,0] for denom in jkdenominators])
+            # aa = aiai.sum()
+            # q = q - ay/aa*aixi - ax/aa*aiyi + ay*ax/aa**2 * aiai
+
 
         score = q.sum()
         optscore = np.abs(q).sum()
@@ -241,18 +257,9 @@ def main(args):
 
         # sf exact
         null = []
-        test = []
         T = 100000
-        print(((np.sign(u) == 0)&(q != 0)).sum())
-        print((np.sign(u)==0).sum())
-        print((np.sign(w)==0).sum())
-
-        import pdb; pdb.set_trace()
-        for t in range(T):
-            s = (-1)**np.random.binomial(1,mu,size=len(q))
-            s = -s*np.sign(u)
-            null.append(s.dot(q))
-            test.append(s.dot(u))
+        s = (-1)**np.random.binomial(1,0.5,size=(T, len(q)))
+        null = s.dot(q)
         p = ((np.abs(null) >= np.abs(score)).sum()) / float(T)
         p = min(max(p,1./T), 1)
         se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
