@@ -12,7 +12,7 @@ import pyutils.iter as pyit
 import gprim.annotation as ga
 import gprim.dataset as gd; reload(gd)
 import pyutils.memo as memo
-import weights; reload(weights)
+import weights
 
 
 def get_locus_inds(snps, loci, chroms):
@@ -103,6 +103,12 @@ def main(args):
             print('ERROR')
             sys.exit(1)
 
+        # Threshold the annotations if necessary
+        print('thresholding RV at percentile', args.RV_percentile)
+        for n in marginal_names:
+            thresh = np.percentile(snps[n].values**2, args.RV_percentile)
+            snps.loc[snps[n]**2 < thresh, 'typed'] = False
+
         # ignore some regression snps if necessary
         if args.ldscore_percentile is not None:
             to_threshold = 'l_all'
@@ -180,6 +186,7 @@ def main(args):
                 [denominators[l] for l in ldblock_ind]))
             jksizes.append(np.sum(ldblocks.iloc[i:j].M_H.values))
             jkweights.append(np.diagonal(jkdenominators[-1]))
+    print(np.percentile([d[-1,-1] for d in jkdenominators], [0,20,40,60,80,100]))
     # print('jk sizes:', jksizes)
     # print('jk weights:', jkweights)
     ## compute LOO sufficient statistics
@@ -257,11 +264,10 @@ def main(args):
 
         # sf exact
         null = []
-        T = 100000
-        s = (-1)**np.random.binomial(1,0.5,size=(T, len(q)))
+        s = (-1)**np.random.binomial(1,0.5,size=(args.T, len(q)))
         null = s.dot(q)
-        p = ((np.abs(null) >= np.abs(score)).sum()) / float(T)
-        p = min(max(p,1./T), 1)
+        p = ((np.abs(null) >= np.abs(score)).sum()) / float(args.T)
+        p = min(max(p,1./args.T), 1)
         se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
         results.loc[i,'sf_score'] = score
         results.loc[i,'sf_se'] = se
@@ -326,6 +332,8 @@ if __name__ == '__main__':
             help='path to LD scores, where LD is computed to regression SNPs only.')
     parser.add_argument('--ldscore-percentile', default=None,
             help='snps with ld score below this threshold wont be used for regression')
+    parser.add_argument('--RV-percentile', default=0,
+            help='snps with RV below this threshold will be zeroed out')
     parser.add_argument('--svd-stem',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/svds_95percent/',
             help='path to truncated svds of reference panel, by LD block')
@@ -333,6 +341,8 @@ if __name__ == '__main__':
             help='number of jackknife blocks to use')
     parser.add_argument('--weight-jk', default='none',
             help='what to weight the jackknife by. Options are none, snps, annot')
+    parser.add_argument('--T', type=int, default=100000,
+            help='number of times to sign flip for empirical p-values')
     parser.add_argument('--ld-blocks',
             default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
             help='path to UCSC bed file containing one bed interval per ld block')
