@@ -33,8 +33,12 @@ def main(args):
     ld = pd.concat([pd.read_csv(args.ldscores_chr+str(c)+'.l2.ldscore.gz',
                         delim_whitespace=True)
                     for c in range(1,23)], axis=0)
-    M_5_50 = sum([int(open(args.ldscores_chr+str(c)+'.l2.M_5_50').next())
-                    for c in range(1,23)])
+    if args.no_M_5_50:
+        M = sum([int(open(args.ldscores_chr+str(c)+'.l2.M').next())
+                        for c in range(1,23)])
+    else:
+        M = sum([int(open(args.ldscores_chr+str(c)+'.l2.M_5_50').next())
+                        for c in range(1,23)])
     print(len(ld), 'snps with ld scores')
     ssld = pd.merge(ss, ld, on='SNP', how='left')
     print(len(ssld), 'hm3 snps with sumstats after merge.')
@@ -42,9 +46,9 @@ def main(args):
     # estimate heritability using aggregate estimator
     meanchi2 = (ssld.Z**2).mean()
     meanNl2 = (ssld.N*ssld.L2).mean()
-    h2g = (meanchi2 - 1)/(meanNl2/M_5_50)
+    sigma2g = (meanchi2 - 1)/meanNl2
+    h2g = sigma2g * M
     h2g = max(h2g, 0.03) #0.03 is the minimum of stephens estimates using real methods
-    sigma2g = h2g / M_5_50
     print('h2g estimated at:', h2g, 'sigma2g =', sigma2g)
 
     # write results to file
@@ -210,6 +214,8 @@ if __name__ == '__main__':
             help='path to LD scores, where LD is computed to regression SNPs only.')
     parser.add_argument('--refpanel-name', default='KG3.95',
             help='suffix added to the directory created for storing output')
+    parser.add_argument('-no-M-5-50', default=False, action='store_true',
+            help='dont filter to SNPs with MAF >= 5% when estimating heritabilities')
     parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int)
 
     args = parser.parse_args()

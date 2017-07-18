@@ -73,7 +73,24 @@ def main(args):
                         np.power(2*snps.MAF.values*(1-snps.MAF.values),
                                 (1.+args.alpha)/2)[:,None]
 
-            snps = pd.concat([snps, pd.DataFrame(np.zeros(snps[names].shape), columns=namesR)], axis=1)
+            snps = pd.concat(
+                    [snps, pd.DataFrame(np.zeros(snps[names].shape), columns=namesR)],
+                    axis=1)
+
+            # compute simple statistics about annotation
+            print('computing basic statistics and writing')
+            info = pd.DataFrame(
+                    columns=['M', 'M_5_50', 'sqnorm', 'sqnorm_5_50', 'supp', 'supp_5_50'])
+            info['name'] = names
+            info.set_index('name', inplace=True)
+            info['M'] = len(snps)
+            info['sqnorm'] = np.linalg.norm(snps[names], axis=0)**2
+            info['supp'] = np.linalg.norm(snps[names], ord=0, axis=0)
+            M_5_50 = (snps.MAF >= 0.05).values
+            info['M_5_50'] = M_5_50.sum()
+            info['sqnorm_5_50'] = np.linalg.norm(snps.loc[M_5_50, names], axis=0)**2
+            info['supp_5_50'] = np.linalg.norm(snps.loc[M_5_50, names], ord=0, axis=0)
+            info.to_csv(annot.info_filename(c), sep='\t')
 
             for ldblock, X, meta, ind in refpanel.block_data(ldblocks, c, meta=snps):
                 if meta.printsnp.sum() == 0:
@@ -83,27 +100,15 @@ def main(args):
                 if (meta[names] == 0).values.all():
                     print('annotations are all 0 in this block')
                     snps.loc[ind, namesR] = 0
-                    VTRV = pd.DataFrame(columns=allnames, index=allnames).fillna(value=0)
-                    VTV = pd.DataFrame(columns=allnames, index=allnames).fillna(value=0)
                 else:
                     mask = meta.printsnp.values
                     V = meta[allnames].values
                     XV = X.dot(V)
                     snps.loc[ind[mask], namesR] = \
                             X[:,mask].T.dot(XV[:,-len(names):]) / X.shape[0]
-                    VTRV = pd.DataFrame(XV.T.dot(XV)/X.shape[0],
-                            columns=allnames, index=allnames)
-                    VTV = pd.DataFrame(V.T.dot(V), columns=allnames, index=allnames)
-
-                if not args.no_cov:
-                    VTRV.to_csv(annot.filestem()+args.outfile_suffix+'VTRV.'+str(ldblock.name),
-                            sep='\t')
-                    VTV.to_csv(annot.filestem()+args.outfile_suffix+'VTV.'+str(ldblock.name),
-                            sep='\t')
 
             print('writing output')
-            with gzip.open('{}{}{}.RV.gz'.format(annot.filestem(), args.outfile_suffix, c),
-                    'w') as f:
+            with gzip.open(annot.RV_filename(c), 'w') as f:
                 snps.loc[snps.printsnp,['SNP','A1','A2']+names+namesR].to_csv(
                         f, index=False, sep='\t')
 
@@ -129,8 +134,6 @@ if __name__ == '__main__':
         help='scale annotation values by sqrt(2*maf(1-maf))^{alpha+1}. '+\
                 '-1 means assume things are already per-normalized-genotype, '+\
                 '0 means assume they were per allele. Armin says -0.3.')
-    parser.add_argument('-no-cov', action='store_true', default=False,
-            help='dont write covariance matrices for each block')
     parser.add_argument('--bfile-chr',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
                 '1000G.EUR.QC.',
@@ -139,8 +142,6 @@ if __name__ == '__main__':
             default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
             help='path to UCSC bed file containing one bed interval per LD' + \
                     ' block')
-    parser.add_argument('--outfile-suffix', default='',
-            help='suffix to add to outputfile')
     parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int)
 
     args = parser.parse_args()

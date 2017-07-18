@@ -29,6 +29,8 @@ def get_locus_inds(snps, loci, chroms):
                 offset + np.searchsorted(chrsnps.BP.values, chrloci.end.values))
     return zip(locusstarts.astype(int), locusends.astype(int))
 
+# TODO: add output for norm of v, support of v as fraction of genome, heritability,
+#  r_f, h2v
 
 def main(args):
     # basic initialization
@@ -39,6 +41,7 @@ def main(args):
     annots = [ga.Annotation(annot) for annot in args.sannot_chr]
     marginal_names = sum([a.names(22, True) for a in annots], [])
     marginal_names = [n for n in marginal_names if '.R' in n]
+    marginal_infos = pd.concat([a.info_df(args.chroms) for a in annots], axis=0)
 
     baselineannots = [ga.Annotation(annot) for annot in args.baseline_sannot_chr]
     baseline_names = sum([a.names(22, True) for a in baselineannots], [])
@@ -74,7 +77,9 @@ def main(args):
         print('reading sumstats')
         ss = pd.read_csv(args.ssjk_chr+str(c)+'.ss.jk.gz', sep='\t',
                 usecols=['N',args.weightedss])
-        sigma2g = pd.read_csv(args.ssjk_chr+'info', sep='\t').sigma2g.values[0]
+        sumstats_info = pd.read_csv(args.ssjk_chr+'info', sep='\t')
+        sigma2g = sumstats_info.loc[0].sigma2g
+        h2g = sumstats_info.loc[0].h2g
         print(np.isnan(ss[args.weightedss]).sum(), 'sumstats nans out of', len(ss))
         snps['Winv_ahat'] = ss[args.weightedss]
         snps['N'] = ss.N
@@ -104,10 +109,11 @@ def main(args):
             sys.exit(1)
 
         # Threshold the annotations if necessary
-        print('thresholding RV at percentile', args.RV_percentile)
-        for n in marginal_names:
-            thresh = np.percentile(snps[n].values**2, args.RV_percentile)
-            snps.loc[snps[n]**2 < thresh, 'typed'] = False
+        if args.RV_percentile > 0:
+            print('thresholding RV at percentile', args.RV_percentile)
+            for n in marginal_names:
+                thresh = np.percentile(snps[n].values**2, args.RV_percentile)
+                snps.loc[snps[n]**2 < thresh, 'typed'] = False
 
         # ignore some regression snps if necessary
         if args.ldscore_percentile is not None:
@@ -228,7 +234,7 @@ def main(args):
         k = marginal_names.index(name)
         q = np.array([num[len(baseline_names)+k] for num in jknumerators])
 
-        # (find the bias of the coin flips if there's a baseline annotation)
+        # residualize out baseline annotations from q
         if len(baseline_names) > 0:
             num = sum(jknumerators)
             denom = sum(jkdenominators)
@@ -256,16 +262,16 @@ def main(args):
         score = q.sum()
         optscore = np.abs(q).sum()
         se = np.sqrt(np.sum(q**2))
-        results.loc[i,'sfapprox_score'] = score
-        results.loc[i,'sfapprox_se'] = se
         results.loc[i,'sfapprox_z'] = score/se
         results.loc[i,'sfapprox_p'] = st.chi2.sf((score/se)**2,1)
-        results.loc[i,'opt_z'] = optscore/se
 
         # sf exact
+        fs.mem()
         null = []
         s = (-1)**np.random.binomial(1,0.5,size=(args.T, len(q)))
+        fs.mem()
         null = s.dot(q)
+        fs.mem()
         p = ((np.abs(null) >= np.abs(score)).sum()) / float(args.T)
         p = min(max(p,1./args.T), 1)
         se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
@@ -273,6 +279,8 @@ def main(args):
         results.loc[i,'sf_se'] = se
         results.loc[i,'sf_z'] = score/se
         results.loc[i,'sf_p'] = p
+        del s; del null; gc.collect()
+        fs.mem()
 
         # jk
         score = total_est
@@ -288,10 +296,23 @@ def main(args):
         else: # annotsqrt
             se = jackknife_se(total_est, loonumerators, loodenominators,
                     [np.sqrt(j[len(baseline_names)+i]) for j in jkweights], name)
-        results.loc[i,'jk_score'] = score
+        results.loc[i,'mu'] = score
         results.loc[i,'jk_se'] = se
         results.loc[i,'jk_z'] = score/se
         results.loc[i,'jk_p'] = st.chi2.sf((score/se)**2,1)
+
+        # add metadata about v and scale point estimate to get r_f
+        for prop in ['supp', 'sqnorm', 'supp_5_50', 'sqnorm_5_50']:
+            results.loc[i,prop] = marginal_infos.loc[name[:-2], prop]
+
+        # add estimates of r_f and h2v
+        M = marginal_infos.loc[name[:-2],'M']
+        results.loc[i,'h2g'] = h2g
+        results.loc[i,'r_f'] = score * np.sqrt(
+                results.loc[i].sqnorm / (M*sigma2g))
+        results.loc[i,'h2v_h2g'] = results.loc[i].r_f**2 - \
+                results.loc[i].jk_se**2 * results.loc[i].sqnorm / (M*sigma2g)
+        results.loc[i,'h2v'] = results.loc[i].h2v_h2g * (M*sigma2g)
 
     print('writing results')
     print(results)
@@ -348,6 +369,8 @@ if __name__ == '__main__':
             help='path to UCSC bed file containing one bed interval per ld block')
     parser.add_argument('--chroms', nargs='+', type=int, default=range(1,23))
 
+    print(' '.join(sys.argv))
+    print('=====')
     args = parser.parse_args()
     pretty.print_namespace(args)
 
