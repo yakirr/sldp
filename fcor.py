@@ -266,21 +266,29 @@ def main(args):
         results.loc[i,'sfapprox_p'] = st.chi2.sf((score/se)**2,1)
 
         # sf exact
-        fs.mem()
-        null = []
-        s = (-1)**np.random.binomial(1,0.5,size=(args.T, len(q)))
-        fs.mem()
-        null = s.dot(q)
-        fs.mem()
-        p = ((np.abs(null) >= np.abs(score)).sum()) / float(args.T)
-        p = min(max(p,1./args.T), 1)
+        print(time.time()-t0, 'before'); fs.mem()
+        null = np.zeros(args.T); current = 0; block = 100000
+        while current < len(null):
+            s = (-1)**np.random.binomial(1,0.5,size=(block, len(q)))
+            null[current:current+block] = s.dot(q)
+            current += block
+            p = ((np.abs(null) >= np.abs(score)).sum()) / float(current)
+            del s; gc.collect()
+            print('current p:', p); fs.mem()
+
+            if p >= 0.01:
+                null = null[:current]
+                break
+        p = ((np.abs(null) >= np.abs(score)).sum()) / float(len(null))
+        p = min(max(p,1./float(len(null))), 1)
         se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
         results.loc[i,'sf_score'] = score
         results.loc[i,'sf_se'] = se
         results.loc[i,'sf_z'] = score/se
         results.loc[i,'sf_p'] = p
-        del s; del null; gc.collect()
+        del null; gc.collect()
         fs.mem()
+        print('after')
 
         # jk
         score = total_est
@@ -314,8 +322,8 @@ def main(args):
                 results.loc[i].jk_se**2 * results.loc[i].sqnorm / (M*sigma2g)
         results.loc[i,'h2v'] = results.loc[i].h2v_h2g * (M*sigma2g)
 
-    print('writing results')
     print(results)
+    print('writing results to', args.outfile_stem + '.gwresults')
     results.to_csv(args.outfile_stem + '.gwresults', sep='\t', index=False, na_rep='nan')
     print('done')
 

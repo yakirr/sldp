@@ -38,6 +38,7 @@ for sannot in args.sannot_chr:
     se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
     results = results.append({
         'annot':annot.columns[4],
+        'pheno':args.ssjk_chr.split('/')[-1],
         'naive_score':score,
         'naive_z':score/se,
         'naive_p':p},
