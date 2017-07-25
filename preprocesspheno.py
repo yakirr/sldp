@@ -51,7 +51,7 @@ def main(args):
     h2g = max(h2g, 0.03) #0.03 is the minimum of stephens estimates using real methods
     print('h2g estimated at:', h2g, 'sigma2g =', sigma2g)
 
-    # write results to file
+    # write h2g results to file
     dirname = args.sumstats_stem + '.' + args.refpanel_name
     fs.makedir(dirname)
     if 1 in args.chroms:
@@ -63,6 +63,7 @@ def main(args):
                     'Nbar':ss.N.mean()},ignore_index=True)
         info.to_csv(dirname+'/info', sep='\t', index=False)
 
+    # preprocess ld blocks
     t0 = time.time()
     for c in args.chroms:
         print(time.time()-t0, ': loading chr', c, 'of', args.chroms)
@@ -72,37 +73,20 @@ def main(args):
         snps.svdsnp.fillna(False, inplace=True)
         print(len(snps), 'snps in refpanel', len(snps.columns), 'columns, including metadata')
 
-        # read in ld scores
-        l_all = pd.read_csv(args.ldscores_chr+str(c)+'.l2.ldscore.gz', sep='\t').rename(
-                columns={'L2':'l_all'})
-        l_reg = pd.read_csv(args.ldscores_reg_chr+str(c)+'.l2.ldscore.gz', sep='\t').rename(
-                columns={'L2':'l_reg'})
-        snps = ga.smart_merge(snps, l_all, drop_from_y=['CHR','BP'], how='left')
-        snps = ga.smart_merge(snps, l_reg, drop_from_y=['CHR','BP'], how='left')
-
         # merge annot and sumstats
         print('reconciling')
         snps = ga.reconciled_to(snps, ss, ['Z'],
                 othercolnames=['N'], missing_val=np.nan)
         snps['typed'] = snps.Z.notnull()
         snps['ahat'] = snps.Z / np.sqrt(snps.N)
+
+        # initialize result dataframe
         # I = no weights
-        # hlN = heuristic weights with large N approximation
         # h = heuristic weights, using R_o
-        # h2 = heuristic weights, using (R2)_o
-        # no suffix = exact weights
         snps['Winv_ahat_I'] = np.nan # = W_o^{-1} ahat_o
         snps['R_Winv_ahat_I'] = np.nan # = R_{*o} W_o^{-1} ahat_o
-        snps['Winv_ahat_l'] = np.nan # = W_o^{-1} ahat_o
-        snps['R_Winv_ahat_l'] = np.nan # = R_{*o} W_o^{-1} ahat_o
-        # snps['Winv_ahat_hlN'] = np.nan # = W_o^{-1} ahat_o
-        # snps['R_Winv_ahat_hlN'] = np.nan # = R_{*o} W_o^{-1} ahat_o
         snps['Winv_ahat_h'] = np.nan # = W_o^{-1} ahat_o
         snps['R_Winv_ahat_h'] = np.nan # = R_{*o} W_o^{-1} ahat_o
-        # snps['Winv_ahat_h2'] = np.nan # = W_o^{-1} ahat_o
-        # snps['R_Winv_ahat_h2'] = np.nan # = R_{*o} W_o^{-1} ahat_o
-        # snps['Winv_ahat'] = np.nan # = W_o^{-1} ahat_o
-        # snps['R_Winv_ahat'] = np.nan # = R_{*o} W_o^{-1} ahat_o
 
         # restrict to ld blocks in this chr and process them in chunks
         for ldblock, X, meta, ind in refpanel.block_data(ldblocks, c, meta=snps):
@@ -115,11 +99,7 @@ def main(args):
                 print('no typed snps found in this block')
                 snps.loc[ind, [
                     'R_Winv_ahat_I',
-                    'R_Winv_ahat_l',
-                    # 'R_Winv_ahat_hlN',
-                    'R_Winv_ahat_h',
-                    # 'R_Winv_ahat_h2',
-                    # 'R_Winv_ahat'
+                    'R_Winv_ahat_h'
                     ]] = 0
                 continue
             R = np.load(args.svd_stem+str(ldblock.name)+'.R.npz')
@@ -129,51 +109,15 @@ def main(args):
 
             # multiply ahat by the weights
             x_I = snps.loc[ind[meta.svdsnp],'Winv_ahat_I'] = weights.invert_weights(
-                    R, R2, meta_svd.l_all.values, meta_svd.l_reg.values,
-                    sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat_I')
-            x_l = snps.loc[ind[meta.svdsnp],'Winv_ahat_l'] = weights.invert_weights(
-                    R, R2, meta_svd.l_all.values, meta_svd.l_reg.values,
-                    sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat_l')
-            # x_hlN = snps.loc[ind[meta.svdsnp],'Winv_ahat_hlN'] = weights.invert_weights(
-            #         R, R2, sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat_hlN')
+                    R, R2, sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat_I')
             x_h = snps.loc[ind[meta.svdsnp],'Winv_ahat_h'] = weights.invert_weights(
-                    R, R2, meta_svd.l_all.values, meta_svd.l_reg.values,
-                    sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat_h')
-            # x_h2 = snps.loc[ind[meta.svdsnp],'Winv_ahat_h2'] = weights.invert_weights(
-            #         R, R2, sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat_h2')
-            # x = snps.loc[ind[meta.svdsnp],'Winv_ahat'] = weights.invert_weights(
-            #         R, R2, sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat')
-            # print(np.corrcoef([x_hlN[meta_svd.typed],
-            #     x_h[meta_svd.typed],
-            #     x_h2[meta_svd.typed],
-            #     x[meta_svd.typed]]))
+                    R, R2, sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat_h')
 
-            # # multiply the results by R
-            # X_typed = X[:,meta.typed]
-            # snps.loc[ind, 'R_Winv_ahat_I'] = X.T.dot(X_typed.dot(
-            #     x_I[meta_svd.typed]))/X.shape[0]
-            # # snps.loc[ind, 'R_Winv_ahat_hlN'] = X.T.dot(X_typed.dot(
-            # #     x_hlN[meta_svd.typed]))/X.shape[0]
-            # snps.loc[ind, 'R_Winv_ahat_h'] = X.T.dot(X_typed.dot(
-            #     x_h[meta_svd.typed]))/X.shape[0]
-            # # snps.loc[ind, 'R_Winv_ahat_h2'] = X.T.dot(X_typed.dot(
-            # #     x_h2[meta_svd.typed]))/X.shape[0]
-            # # snps.loc[ind, 'R_Winv_ahat'] = X.T.dot(X_typed.dot(
-            # #     x[meta_svd.typed]))/X.shape[0]
-
-        print('writing finemapped sumstats')
-        # with gzip.open('{}/{}.ss.sf.gz'.format(dirname, c), 'w') as f:
-        #     snps[['N','R_Winv_ahat_hlN','R_Winv_ahat_h',
-        #         'R_Winv_ahat_h2','R_Winv_ahat']].to_csv(
-        #             f, index=False, sep='\t')
-        with gzip.open('{}/{}.ss.jk.gz'.format(dirname, c), 'w') as f:
+        print('writing processed sumstats')
+        with gzip.open('{}/{}.pss.gz'.format(dirname, c), 'w') as f:
             snps.loc[snps.svdsnp,['N',
                 'Winv_ahat_I',
-                'Winv_ahat_l',
-                # 'Winv_ahat_hlN',
-                'Winv_ahat_h',
-                # 'Winv_ahat_h2',
-                # 'Winv_ahat'
+                'Winv_ahat_h'
                 ]].to_csv(
                     f, index=False, sep='\t')
 
@@ -208,10 +152,6 @@ if __name__ == '__main__':
             help='path to LD scores at a smallish set of SNPs. LD should be computed '+\
                     'to all potentially causal snps. This is used for '+\
                     'heritability estimation')
-    parser.add_argument('--ldscores-reg-chr',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/weights/'+\
-                    'weights.hm3_noMHC.',
-            help='path to LD scores, where LD is computed to regression SNPs only.')
     parser.add_argument('--refpanel-name', default='KG3.95',
             help='suffix added to the directory created for storing output')
     parser.add_argument('-no-M-5-50', default=False, action='store_true',
