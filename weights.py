@@ -3,8 +3,6 @@ import numpy as np
 
 # R: SVD of (R, restricted to regression SNPs)
 # R2: SVD of (R^2, restricted to regression SNPs)
-# l_all: ld scores to all causal snps
-# l_reg: ld scores to all regression snps only
 def invert_weights(R, R2, sigma2g, N, x, typed=None, mode='Winv_ahat_h'):
     if typed is None:
         typed = np.isfinite(x.reshape((len(x),-1)).sum(axis=1))
