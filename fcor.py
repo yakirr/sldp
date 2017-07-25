@@ -334,12 +334,12 @@ if __name__ == '__main__':
             default='/groups/price/yakir/temp',
             help='path to an output file stem')
     parser.add_argument('--ssjk-chr', #required=True,
-            default='/groups/price/yakir/data/simsumstats/GERAimp.wim9nm/'+\
-                    'no_enrichment_3pcs_affy/1/all.KG3.95/',
+            default='/groups/price/yakir/data/sumstats.hm3/processed/CD.KG3.95/',
             help='one or more paths to .ss.jk.gz files, without chr number or extension')
     parser.add_argument('--sannot-chr', nargs='+', #required=True,
-            default=['/groups/price/yakir/data/simannot/KG3.wim9nm/HaibGm12878Sp1Pcr1x/KG3/',
-                    '/groups/price/yakir/data/simannot/KG3.wim9nm/HaibH1hescUsf1Pcr1x/KG3/'],
+            default=[
+                '/groups/price/yakir/data/annot/basset/processed.a9/HaibGm12878Sp1Pcr1x/',
+                '/groups/price/yakir/data/annot/basset/processed.a9/HaibH1hescUsf1Pcr1x/'],
             help='one or more paths to gzipped annot files, not including ' + \
                     'chromosome number or .sannot.gz extension')
     parser.add_argument('--weightedss', default='Winv_ahat_h',
