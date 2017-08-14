@@ -103,6 +103,6 @@ def signflip(q, T, printmem=True):
     se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
 
     del null; gc.collect()
-    print('after sign-flipping:', fs.mem(), 'MB')
+    print('after sign-flipping:', fs.mem(), 'MB. p=', p)
 
     return p, score/se

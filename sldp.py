@@ -212,7 +212,7 @@ if __name__ == '__main__':
             help='path to truncated svds of reference panel, by LD block')
     parser.add_argument('--jk-blocks', type=int, default=100,
             help='number of jackknife blocks to use')
-    parser.add_argument('--T', type=int, default=100000,
+    parser.add_argument('--T', type=int, default=1000000,
             help='number of times to sign flip for empirical p-values')
     parser.add_argument('--seed', default=None, type=int,
             help='Seed random number generator to a certain value. Off by default')
@@ -221,9 +221,11 @@ if __name__ == '__main__':
             help='path to UCSC bed file containing one bed interval per ld block')
     parser.add_argument('--chroms', nargs='+', type=int, default=range(1,23))
 
+    print('=====')
     print(' '.join(sys.argv))
     print('=====')
     args = parser.parse_args()
     pretty.print_namespace(args)
+    print('=====')
 
     main(args)
