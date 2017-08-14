@@ -10,7 +10,7 @@ import pyutils.bsub as bsub
 import pyutils.fs as fs
 import pyutils.iter as pyit
 import gprim.annotation as ga
-import gprim.dataset as gd; reload(gd)
+import gprim.dataset as gd
 import pyutils.memo as memo
 import weights
 import chunkstats as cs
@@ -143,7 +143,6 @@ def main(args):
     for i, name in enumerate(marginal_names):
         print(i, name)
         k = marginal_names.index(name)
-        reload(cs)
         mu = cs.get_est(sum(chunk_nums), sum(chunk_denoms), k, len(background_names))
         results = results.append({
             'pheno':pheno_name,
