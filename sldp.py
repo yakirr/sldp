@@ -13,16 +13,17 @@ import gprim.annotation as ga
 import gprim.dataset as gd
 import pyutils.memo as memo
 import weights
-import chunkstats as cs
+import chunkstats as cs; reload(cs)
 
 
 def main(args):
     # basic initialization
     mhc_bp = [25684587, 35455756]
     refpanel = gd.Dataset(args.bfile_chr)
-    pheno_name = args.pss_chr.split('/')[-2].split('.')[0]
+    pheno_name = args.pss_chr.split('/')[-2].replace('.KG3.95','')
     if args.seed is not None:
         np.random.seed(args.seed)
+        print('random seed:', args.seed)
 
     # read in names of background annotations and marginal annotations
     annots = [ga.Annotation(annot) for annot in args.sannot_chr]
@@ -130,7 +131,7 @@ def main(args):
                     Winv_RV[meta.typed]).values/1e6
         memo.reset()
 
-    # gete data for jackknifing
+    # get data for jackknifing
     print('jackknifing')
     chunk_nums, chunk_denoms, loo_nums, loo_denoms = cs.collapse_to_chunks(
             ldblocks,
@@ -139,6 +140,7 @@ def main(args):
             args.jk_blocks)
 
     # compute final results
+    global q, results
     results = pd.DataFrame()
     for i, name in enumerate(marginal_names):
         print(i, name)
@@ -151,10 +153,11 @@ def main(args):
 
         # compute q
         q = cs.getq(chunk_nums, chunk_denoms, len(background_names), k)
+        results.loc[i,'qkurtosis'] = st.kurtosis(q)
+        results.loc[i,'qstd'] = np.std(q)
 
         # exact sign-flipping
-        score = q.sum()
-        p, z = cs.signflip(q, args.T, printmem=True)
+        p, z = cs.signflip(q, args.T, printmem=True, mode=args.stat)
         results.loc[i,'sf_z'] = z
         results.loc[i,'sf_p'] = p
 
@@ -177,6 +180,7 @@ def main(args):
         results.loc[i,'h2v_h2g'] = results.loc[i].r_f**2 - \
                 results.loc[i].jk_se**2 * results.loc[i].sqnorm / (M*sigma2g)
         results.loc[i,'h2v'] = results.loc[i].h2v_h2g * (M*sigma2g)
+        results.to_csv(args.outfile_stem + '.gwresults', sep='\t', index=False, na_rep='nan')
 
     print(results)
     print('writing results to', args.outfile_stem + '.gwresults')
@@ -209,7 +213,7 @@ if __name__ == '__main__':
     parser.add_argument('--svd-stem',
             default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/svds_95percent/',
             help='path to truncated svds of reference panel, by LD block')
-    parser.add_argument('--jk-blocks', type=int, default=100,
+    parser.add_argument('--jk-blocks', type=int, default=300,
             help='number of jackknife blocks to use')
     parser.add_argument('--T', type=int, default=1000000,
             help='number of times to sign flip for empirical p-values')
@@ -218,6 +222,8 @@ if __name__ == '__main__':
     parser.add_argument('--ld-blocks',
             default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
             help='path to UCSC bed file containing one bed interval per ld block')
+    parser.add_argument('--stat', default='sum',
+            help='sum, medrank, or thresh')
     parser.add_argument('--chroms', nargs='+', type=int, default=range(1,23))
 
     print('=====')

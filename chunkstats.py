@@ -84,24 +84,54 @@ def getq(chunk_nums, chunk_denoms, num_background, k):
     return q
 
 # do sign-flipping to get p-value
-def signflip(q, T, printmem=True):
+#TODO: probably remove medrank and thresh options
+def signflip(q, T, printmem=True, mode='sum'):
+    def mask(a, t):
+        a_ = a.copy()
+        a_[np.abs(a_) < t] = 0
+        return a_
+
     print('before sign-flipping:', fs.mem(), 'MB')
-    score = q.sum()
+
+    if mode == 'sum':
+        score = q.sum()
+    elif mode == 'medrank':
+        score = np.searchsorted(np.sort(q), 0)/len(q) - 0.5
+    elif mode == 'thresh':
+        top = np.percentile(np.abs(q), 75)
+        print(top)
+        ts = np.arange(0, top, top/10)
+        q_thresh = np.array([mask(q, t) for t in ts]).T
+        q_thresh /= np.linalg.norm(q_thresh, axis=0)
+        scores = np.sum(q_thresh, axis=0)
+        score = scores[np.argmax(np.abs(scores))]
+    else:
+        print('ERROR: invalid mode')
+        return None
+
     null = np.zeros(T); current = 0; block = 100000
     while current < len(null):
         s = (-1)**np.random.binomial(1,0.5,size=(block, len(q)))
-        null[current:current+block] = s.dot(q)
+        if mode == 'sum':
+            null[current:current+block] = s.dot(q)
+        elif mode == 'medrank':
+            null_q = s[:,:]*q[None,:]
+            null_q = np.sort(null_q, axis=1)
+            null[current:current+block] = \
+                    np.array([np.searchsorted(s, 0)/len(s) - 0.5 for s in null_q])
+        elif mode == 'thresh':
+            null_q_thresh = s[:,:,None]*q_thresh[None,:,:]
+            sums = np.sum(null_q_thresh, axis=1)
+            null[current:current+block] = np.array([s[np.argmax(np.abs(s))] for s in sums])
+
         current += block
         p = ((np.abs(null) >= np.abs(score)).sum()) / float(current)
         del s; gc.collect()
-
         if p >= 0.01:
             null = null[:current]
             break
-    p = ((np.abs(null) >= np.abs(score)).sum()) / float(len(null))
-    p = min(max(p,1./float(len(null))), 1)
-    se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
 
+    se = np.abs(score)/np.sqrt(st.chi2.isf(p,1))
     del null; gc.collect()
     print('after sign-flipping:', fs.mem(), 'MB. p=', p)
 
