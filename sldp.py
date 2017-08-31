@@ -13,7 +13,7 @@ import gprim.annotation as ga
 import gprim.dataset as gd
 import pyutils.memo as memo
 import weights
-import chunkstats as cs; reload(cs)
+import chunkstats as cs
 
 
 def main(args):
@@ -100,8 +100,10 @@ def main(args):
                 # annotations are all 0 in this block
                 ldblocks.loc[ldblock.name, 'M_H'] = 0
                 continue
-            # record the number of typed snps in this block
+            # record the number of typed snps in this block, and start- and end- snp indices
             ldblocks.loc[ldblock.name, 'M_H'] = meta.typed.sum()
+            ldblocks.loc[ldblock.name, 'snpind_begin'] = min(meta.index)
+            ldblocks.loc[ldblock.name, 'snpind_end'] = max(meta.index)+1
 
             # load regression weights and prepare for regression computation
             meta_t = meta[meta.typed]
@@ -133,7 +135,7 @@ def main(args):
 
     # get data for jackknifing
     print('jackknifing')
-    chunk_nums, chunk_denoms, loo_nums, loo_denoms = cs.collapse_to_chunks(
+    chunk_nums, chunk_denoms, loo_nums, loo_denoms, chunkinfo = cs.collapse_to_chunks(
             ldblocks,
             numerators,
             denominators,
@@ -152,7 +154,18 @@ def main(args):
             ignore_index=True)
 
         # compute q
-        q = cs.getq(chunk_nums, chunk_denoms, len(background_names), k)
+        q, r, mux, muy = cs.residualize(chunk_nums, chunk_denoms, len(background_names), k)
+        if args.verbose:
+            print('writing verbose results to', args.outfile_stem+'.'+name)
+            chunkinfo['q'] = q
+            chunkinfo['r'] = r
+            chunkinfo.to_csv(args.outfile_stem+'.'+name+'.chunks', sep='\t', index=False)
+            coeffs = pd.DataFrame()
+            coeffs['annot'] = background_names
+            coeffs['mux'] = mux
+            coeffs['muy'] = muy
+            coeffs.to_csv(args.outfile_stem+'.'+name+'.coeffs', sep='\t', index=False)
+
         results.loc[i,'qkurtosis'] = st.kurtosis(q)
         results.loc[i,'qstd'] = np.std(q)
 
@@ -176,10 +189,10 @@ def main(args):
         M = marginal_infos.loc[name[:-2],'M']
         results.loc[i,'h2g'] = h2g
         results.loc[i,'r_f'] = mu * np.sqrt(
-                results.loc[i].sqnorm / (M*sigma2g))
+                results.loc[i].sqnorm / h2g)
         results.loc[i,'h2v_h2g'] = results.loc[i].r_f**2 - \
                 results.loc[i].jk_se**2 * results.loc[i].sqnorm / (M*sigma2g)
-        results.loc[i,'h2v'] = results.loc[i].h2v_h2g * (M*sigma2g)
+        results.loc[i,'h2v'] = results.loc[i].h2v_h2g * h2g
         results.to_csv(args.outfile_stem + '.gwresults', sep='\t', index=False, na_rep='nan')
 
     print(results)
@@ -224,6 +237,8 @@ if __name__ == '__main__':
             help='path to UCSC bed file containing one bed interval per ld block')
     parser.add_argument('--stat', default='sum',
             help='sum, medrank, or thresh')
+    parser.add_argument('-verbose', default=False, action='store_true',
+            help='print additional information about each association studied')
     parser.add_argument('--chroms', nargs='+', type=int, default=range(1,23))
 
     print('=====')

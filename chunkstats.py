@@ -1,6 +1,7 @@
 from __future__ import print_function, division
 import gc
 import numpy as np
+import pandas as pd
 import scipy.stats as st
 import pyutils.fs as fs
 
@@ -20,6 +21,9 @@ def collapse_to_chunks(ldblocks, numerators, denominators, numblocks):
         currsize = 0
         chunkendpoints += [currldblock]
 
+    # store SNP indices of begin- and end-points of chunks
+    chunkinfo = pd.DataFrame()
+
     # collapse data within chunks
     chunk_nums = []; chunk_denoms = []
     for n, (i,j) in enumerate(zip(chunkendpoints[:-1], chunkendpoints[1:])):
@@ -29,6 +33,17 @@ def collapse_to_chunks(ldblocks, numerators, denominators, numblocks):
                 [numerators[l] for l in ldblock_ind]))
             chunk_denoms.append(sum(
                 [denominators[l] for l in ldblock_ind]))
+            chunkinfo = chunkinfo.append({
+                'ldblock_begin':min(ldblock_ind),
+                'ldblock_end':max(ldblock_ind)+1,
+                'chr_begin':ldblocks.loc[min(ldblock_ind),'chr'],
+                'chr_end':ldblocks.loc[max(ldblock_ind),'chr'],
+                'bp_begin':ldblocks.loc[min(ldblock_ind),'start'],
+                'bp_end':ldblocks.loc[max(ldblock_ind),'end'],
+                'snpind_begin':ldblocks.loc[min(ldblock_ind),'snpind_begin'],
+                'snpind_end':ldblocks.loc[max(ldblock_ind),'snpind_end'],
+                'numsnps':sum(ldblocks.loc[ldblock_ind,'M_H'])},
+                ignore_index=True)
 
     ## compute leave-one-out sums
     loonumerators = []; loodenominators = []
@@ -36,7 +51,7 @@ def collapse_to_chunks(ldblocks, numerators, denominators, numblocks):
         loonumerators.append(sum(chunk_nums[:i]+chunk_nums[(i+1):]))
         loodenominators.append(sum(chunk_denoms[:i]+chunk_denoms[(i+1):]))
 
-    return chunk_nums, chunk_denoms, loonumerators, loodenominators
+    return chunk_nums, chunk_denoms, loonumerators, loodenominators, chunkinfo
 
 # compute estimate of effect size
 def get_est(num, denom, k, num_background):
@@ -61,9 +76,16 @@ def jackknife_se(est, loonumerators, loodenominators, k, num_background):
     return np.sqrt(np.mean((tau - theta_J)**2/(h-1)))
 
 # residualize the first num_background annotations out of the num_background+k-th
-# marginal annotation
-def getq(chunk_nums, chunk_denoms, num_background, k):
+#   marginal annotation
+# q is the numerator of the regression after background annots are residualized out
+# r is the denominator of the regression after background annots are residualized out
+# mux is the vector of coefficients required to residualize the background out of the
+#   marginal annotatioin question
+# muy is the vector of coefficients required to residualize the backgroud out of the
+#   vector of GWAS summary statistics
+def residualize(chunk_nums, chunk_denoms, num_background, k):
     q = np.array([num[num_background+k] for num in chunk_nums])
+    r = np.array([denom[num_background+k,num_background+k] for denom in chunk_denoms])
 
     if num_background > 0:
         num = sum(chunk_nums)
@@ -80,8 +102,9 @@ def getq(chunk_nums, chunk_denoms, num_background, k):
         aiaiT = np.array([d[:num_background][:,:num_background]
             for d in chunk_denoms])
         q = q - xiaiT.dot(muy) - yiaiT.dot(mux) + aiaiT.dot(muy).dot(mux)
+        r = r - 2*xiaiT.dot(mux) + aiaiT.dot(mux).dot(mux)
 
-    return q
+    return q, r, mux, muy
 
 # do sign-flipping to get p-value
 #TODO: probably remove medrank and thresh options
