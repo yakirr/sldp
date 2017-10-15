@@ -1,2 +1,2 @@
 # Signed LD profile regression
-main sldp regression code
+Main sldp regression code. Tutorial coming soon!
