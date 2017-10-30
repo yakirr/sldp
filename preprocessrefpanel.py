@@ -1,19 +1,10 @@
 from __future__ import print_function, division
-import argparse
-import os, gzip
+import argparse, gc
 import numpy as np
-import scipy.stats as st
 import pandas as pd
-import itertools as it
-from pybedtools import BedTool
-import pyutils.pretty as pretty
-import pyutils.bsub as bsub
-import pyutils.fs as fs
-import gprim.annotation as ga
 import gprim.dataset as gd
 import pyutils.memo as memo
-import gc
-import time
+import config
 
 
 def main(args):
@@ -75,22 +66,30 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--spectrum-percent', type=float, default=95)
-    parser.add_argument('--bfile-chr',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
-                '1000G.EUR.QC.',
-            help='path to plink bfile of reference panel to use, not including chrom num')
-    parser.add_argument('--print-snps',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/'+\
-                    '1000G_hm3_noMHC.rsid')
-    parser.add_argument('--ld-blocks',
-            default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
-            help='path to UCSC bed file containing one bed interval per LD' + \
-                    ' block')
+    parser.add_argument('--spectrum-percent', type=float, default=95,
+            help='Determines how many eigenvectors are kept in the truncated SVD. ' +\
+                    'A value of x means that x percent of the eigenspectrum will be kept. '+\
+                    'Default value: 95')
     parser.add_argument('--outstem', default='/groups/price/ldsc/reference_files/' + \
             '1000G_EUR_Phase3/svds_95percent/',
             help='stem for output filenames')
     parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int)
 
+    parser.add_argument('--config', default=None,
+            help='Path to a json file with values for other parameters. ' +\
+                    'Values in this file will be overridden by any values passed ' +\
+                    'explicitly via the command line.')
+    parser.add_argument('--bfile-chr', default=None,
+            help='Path to plink bfile of reference panel to use, not including ' +\
+                    'chromosome number. If not supplied, will be read from config file.')
+    parser.add_argument('--print-snps', default=None,
+            help='Path to set of potentially typed SNPs. If not supplied, will be read '+\
+                    'from config file.')
+    parser.add_argument('--ld-blocks', default=None,
+            help='Path to UCSC bed file containing one bed interval per LD block. If '+\
+                    'not supplied, will be read from config file.')
+
     args = parser.parse_args()
+    config.add_default_params(args)
+    import pdb; pdb.set_trace()
     main(args)
