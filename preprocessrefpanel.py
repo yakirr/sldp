@@ -91,5 +91,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     config.add_default_params(args)
-    import pdb; pdb.set_trace()
     main(args)
