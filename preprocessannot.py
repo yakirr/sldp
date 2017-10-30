@@ -1,16 +1,12 @@
 from __future__ import print_function, division
-import argparse, os, gzip, gc, time
+import argparse, gzip, gc, time, sys
 import numpy as np
 import pandas as pd
-import itertools as it
-from pybedtools import BedTool
-import pyutils.pretty as pretty
-import pyutils.fs as fs
-import pyutils.iter as pyit
 import gprim.annotation as ga
 import gprim.dataset as gd
-import pyutils.memo as memo
-import weights
+import ypy.pretty as pretty
+import ypy.memo as memo
+import config
 
 
 def main(args):
@@ -116,28 +112,40 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sannot-chr', nargs='+', #required=True,
-            default=['/groups/price/yakir/data/annot/basset/processed.a9/8988T/'],
-            help='path to sannot.gz files, not including chromosome')
-    parser.add_argument('--print-snps',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/'+\
-                    '1000G_hm3_noMHC.rsid',
-            help='The set of snps for which to print the processed annot')
+    # required arguments
+    parser.add_argument('--sannot-chr', nargs='+', required=True,
+            help='Multiple (space-delimited) paths to sannot.gz files, not including '+\
+                    'chromosome')
 
+    # optional arguments
     parser.add_argument('--alpha', type=float, default=-1,
         help='scale annotation values by sqrt(2*maf(1-maf))^{alpha+1}. '+\
-                '-1 means assume things are already per-normalized-genotype, '+\
-                '0 means assume they were per allele. (Armin says -0.3 might be right?)')
-    parser.add_argument('--bfile-chr',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
-                '1000G.EUR.QC.',
-            help='path to plink bfile of reference panel to use, not including chrom num')
-    parser.add_argument('--ld-blocks',
-            default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
-            help='path to UCSC bed file containing one bed interval per LD' + \
-                    ' block')
-    parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int)
+                '-1 means assume annotation values are already per-normalized-genotype, '+\
+                '0 means assume they were per allele. Default is -1.')
+    parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int,
+            help='Space-delimited list of chromosomes to analyze. Default is 1..22')
 
+    # configurable arguments
+    parser.add_argument('--config', default=None,
+            help='Path to a json file with values for other parameters. ' +\
+                    'Values in this file will be overridden by any values passed ' +\
+                    'explicitly via the command line.')
+    parser.add_argument('--bfile-chr', default=None,
+            help='Path to plink bfile of reference panel to use, not including ' +\
+                    'chromosome number. If not supplied, will be read from config file.')
+    parser.add_argument('--print-snps', default=None,
+            help='Path to set of potentially typed SNPs. If not supplied, will be read '+\
+                    'from config file.')
+    parser.add_argument('--ld-blocks', default=None,
+            help='Path to UCSC bed file containing one bed interval per LD block. If '+\
+                    'not supplied, will be read from config file.')
+
+    print('=====')
+    print(' '.join(sys.argv))
+    print('=====')
     args = parser.parse_args()
+    config.add_default_params(args)
     pretty.print_namespace(args)
+    print('=====')
+
     main(args)

@@ -1,19 +1,14 @@
 from __future__ import print_function, division
-import argparse, os, gc, time, resource, sys
+import argparse, os, time, sys
 import numpy as np
-import scipy.stats as st
 import pandas as pd
-import itertools as it
-from pybedtools import BedTool
-import pyutils.pretty as pretty
-import pyutils.bsub as bsub
-import pyutils.fs as fs
-import pyutils.iter as pyit
 import gprim.annotation as ga
 import gprim.dataset as gd
-import pyutils.memo as memo
+import ypy.pretty as pretty
+import ypy.memo as memo
 import weights
 import chunkstats as cs
+import config
 
 
 def main(args):
@@ -166,23 +161,24 @@ def main(args):
             coeffs['muy'] = muy
             coeffs.to_csv(args.outfile_stem+'.'+name+'.coeffs', sep='\t', index=False)
 
-        results.loc[i,'qkurtosis'] = st.kurtosis(q)
-        results.loc[i,'qstd'] = np.std(q)
 
         # exact sign-flipping
         p, z = cs.signflip(q, args.T, printmem=True, mode=args.stat)
-        results.loc[i,'sf_z'] = z
-        results.loc[i,'sf_p'] = p
+        results.loc[i,'z'] = z
+        results.loc[i,'p'] = p
+        if args.more_stats:
+            import scipy.stats as st
+            results.loc[i,'qkurtosis'] = st.kurtosis(q)
+            results.loc[i,'qstd'] = np.std(q)
+            results.loc[i,'p_jk'] = st.chi2.sf((mu/se)**2,1)
 
         # jackknife
         se = cs.jackknife_se(mu, loo_nums, loo_denoms, k, len(background_names))
         results.loc[i,'mu'] = mu
-        results.loc[i,'jk_se'] = se
-        results.loc[i,'jk_z'] = mu/se
-        results.loc[i,'jk_p'] = st.chi2.sf((mu/se)**2,1)
+        results.loc[i,'se(mu)'] = se
 
         # add metadata about v and scale point estimate to get r_f
-        for prop in ['supp', 'sqnorm', 'supp_5_50', 'sqnorm_5_50']:
+        for prop in ['supp', 'sqnorm']:
             results.loc[i,prop] = marginal_infos.loc[name[:-2], prop]
 
         # add estimates of r_f and h2v
@@ -203,48 +199,74 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--outfile-stem', #required=True,
-            default='/groups/price/yakir/temp',
-            help='path to an output file stem')
-    parser.add_argument('--pss-chr', #required=True,
-            default='/groups/price/yakir/data/sumstats.hm3/processed/CD.KG3.95/',
-            help='one or more paths to .pss.gz files, without chr number or extension')
-    parser.add_argument('--sannot-chr', nargs='+', #required=True,
-            default=[
-                '/groups/price/yakir/data/annot/basset/processed.a9/HaibGm12878Sp1Pcr1x/',
-                '/groups/price/yakir/data/annot/basset/processed.a9/HaibH1hescUsf1Pcr1x/'],
-            help='one or more paths to gzipped annot files, not including ' + \
-                    'chromosome number or .sannot.gz extension')
-    parser.add_argument('--weights', default='Winv_ahat_h',
-            help='which set of processed sumstats to use')
-    parser.add_argument('--background-sannot-chr', nargs='+',
-            default=[])
-    parser.add_argument('--bfile-chr',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
-                '1000G.EUR.QC.hm3_noMHC.',
-            help='path to plink bfile of reference panel to use, not including chrom num')
-    parser.add_argument('--svd-stem',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/svds_95percent/',
-            help='path to truncated svds of reference panel, by LD block')
-    parser.add_argument('--jk-blocks', type=int, default=300,
-            help='number of jackknife blocks to use')
-    parser.add_argument('--T', type=int, default=1000000,
-            help='number of times to sign flip for empirical p-values')
-    parser.add_argument('--seed', default=None, type=int,
-            help='Seed random number generator to a certain value. Off by default')
-    parser.add_argument('--ld-blocks',
-            default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
-            help='path to UCSC bed file containing one bed interval per ld block')
-    parser.add_argument('--stat', default='sum',
-            help='sum, medrank, or thresh')
+    # required arguments
+    parser.add_argument('--outfile-stem', required=True,
+            help='Path to an output file stem.')
+    parser.add_argument('--pss-chr', required=True,
+            help='Path to .pss.gz file, without chromosome number or .pss.gz extension. '+\
+                    'This is the phenotype that SLDP will analyze.')
+    parser.add_argument('--sannot-chr', nargs='+', required=True,
+            help='One or more (space-delimited) paths to gzipped annot files, without '+\
+                    'chromosome number or .sannot.gz extension. These are the annotations '+\
+                    'that SLDP will analyze against the phenotype.')
+
+    # optional arguments
+    parser.add_argument('--background-sannot-chr', nargs='+', default=[],
+            help='One or more (space-delimited) paths to gzipped annot files, without '+\
+                    'chromosome number or .sannot.gz extension. These are the annotations '+\
+                    'that SLDP will control for.')
     parser.add_argument('-verbose', default=False, action='store_true',
-            help='print additional information about each association studied')
-    parser.add_argument('--chroms', nargs='+', type=int, default=range(1,23))
+            help='Print additional information about each association studied. This '+\
+                    'includes: '+\
+                    'the covariance in each independent block of genome (.chunks files), '+\
+                    'and the coefficients required to residualize any background '+\
+                        'annotations out of the other annotations being analyzed.')
+    parser.add_argument('-tell-me-stories', default=False, action='store_true',
+            help='COMING SOON. '+\
+                    'Print information about SNPs or loci that may be promising to study. '+\
+                    'This includes: '+\
+                    'Genome-wide significant SNPs with large values of the signed LD '+\
+                        ' profile, and '+\
+                    'lists of loci where the signed LD profile is highly correlated with '+\
+                        'the GWAS signal in a direction consistent with the global effect.')
+    parser.add_argument('-more-stats', default=False, action='store_true',
+            help='Print additional statistis about q in results file')
+    parser.add_argument('--T', type=int, default=1000000,
+            help='number of times to sign flip for empirical p-values. Default is 10^6.')
+    parser.add_argument('--jk-blocks', type=int, default=300,
+            help='Number of jackknife blocks to use. Default is 300.')
+    parser.add_argument('--weights', default='Winv_ahat_h',
+            help='which set of regression weights to use. Default is Winv_ahat_h, '+\
+                    'corresponding to weights described in Reshef et al. 2017.')
+    parser.add_argument('--seed', default=None, type=int,
+            help='Seed random number generator to a certain value. Off by default.')
+    parser.add_argument('--stat', default='sum',
+            help='*experimental* Which statistic to use for hypothesis testing. Options '+\
+                    'are: sum, medrank, or thresh.')
+    parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int,
+            help='Space-delimited list of chromosomes to analyze. Default is 1..22')
+
+    # configurable arguments
+    parser.add_argument('--config', default=None,
+            help='Path to a json file with values for other parameters. ' +\
+                    'Values in this file will be overridden by any values passed ' +\
+                    'explicitly via the command line.')
+    parser.add_argument('--svd-stem', default=None,
+            help='Path to directory in which output files will be stored. ' +\
+                    'If not supplied, will be read from config file.')
+    parser.add_argument('--bfile-chr', default=None,
+            help='Path to plink bfile of reference panel to use, not including ' +\
+                    'chromosome number. If not supplied, will be read from config file.')
+    parser.add_argument('--ld-blocks', default=None,
+            help='Path to UCSC bed file containing one bed interval per LD block. If '+\
+                    'not supplied, will be read from config file.')
+
 
     print('=====')
     print(' '.join(sys.argv))
     print('=====')
     args = parser.parse_args()
+    config.add_default_params(args)
     pretty.print_namespace(args)
     print('=====')
 

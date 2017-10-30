@@ -1,13 +1,14 @@
 from __future__ import print_function, division
-import argparse, gzip, os, gc, time
+import argparse, gzip, os, gc, time, sys
 import numpy as np
 import pandas as pd
-import pyutils.pretty as pretty
-import pyutils.fs as fs
 import gprim.annotation as ga
 import gprim.dataset as gd
-import weights; reload(weights)
-import pyutils.memo as memo
+import ypy.pretty as pretty
+import ypy.fs as fs
+import ypy.memo as memo
+import weights
+import config
 
 
 def main(args):
@@ -15,9 +16,9 @@ def main(args):
     refpanel = gd.Dataset(args.bfile_chr)
     ldblocks = pd.read_csv(args.ld_blocks, delim_whitespace=True, header=None,
             names=['chr','start', 'end'])
-    svd_snps = pd.read_csv(args.svd_snps, header=None, names=['SNP'])
-    svd_snps['svdsnp'] = True
-    print(len(svd_snps), 'svd snps')
+    print_snps = pd.read_csv(args.print_snps, header=None, names=['SNP'])
+    print_snps['printsnp'] = True
+    print(len(print_snps), 'svd snps')
 
     # read sumstats
     print('reading sumstats', args.sumstats_stem)
@@ -25,7 +26,7 @@ def main(args):
     ss = ss[ss.Z.notnull() & ss.N.notnull()]
     print('{} snps, {}-{} individuals (avg: {})'.format(
         len(ss), np.min(ss.N), np.max(ss.N), np.mean(ss.N)))
-    ss = pd.merge(ss, svd_snps[['SNP']], on='SNP', how='inner')
+    ss = pd.merge(ss, print_snps[['SNP']], on='SNP', how='inner')
     print(len(ss), 'snps typed')
 
     # read ld scores
@@ -48,7 +49,7 @@ def main(args):
     meanNl2 = (ssld.N*ssld.L2).mean()
     sigma2g = (meanchi2 - 1)/meanNl2
     h2g = sigma2g * M
-    h2g = max(h2g, 0.03) #0.03 is the minimum of stephens estimates using real methods
+    h2g = max(h2g, 0.03) #0.03 is a somewhat arbitrarily chosen minimum
     print('h2g estimated at:', h2g, 'sigma2g =', sigma2g)
 
     # write h2g results to file
@@ -69,8 +70,8 @@ def main(args):
         print(time.time()-t0, ': loading chr', c, 'of', args.chroms)
         # get refpanel snp metadata for this chromosome
         snps = refpanel.bim_df(c)
-        snps = pd.merge(snps, svd_snps, on='SNP', how='left')
-        snps.svdsnp.fillna(False, inplace=True)
+        snps = pd.merge(snps, print_snps, on='SNP', how='left')
+        snps.printsnp.fillna(False, inplace=True)
         print(len(snps), 'snps in refpanel', len(snps.columns), 'columns, including metadata')
 
         # merge annot and sumstats
@@ -90,11 +91,11 @@ def main(args):
 
         # restrict to ld blocks in this chr and process them in chunks
         for ldblock, X, meta, ind in refpanel.block_data(ldblocks, c, meta=snps):
-            if meta.svdsnp.sum() == 0 or \
+            if meta.printsnp.sum() == 0 or \
                     not os.path.exists(args.svd_stem+str(ldblock.name)+'.R.npz'):
                 print('no svd snps found in this block')
                 continue
-            print(meta.svdsnp.sum(), 'svd snps', meta.typed.sum(), 'typed snps')
+            print(meta.printsnp.sum(), 'svd snps', meta.typed.sum(), 'typed snps')
             if meta.typed.sum() == 0:
                 print('no typed snps found in this block')
                 snps.loc[ind, [
@@ -105,17 +106,17 @@ def main(args):
             R = np.load(args.svd_stem+str(ldblock.name)+'.R.npz')
             R2 = np.load(args.svd_stem+str(ldblock.name)+'.R2.npz')
             N = meta[meta.typed].N.mean()
-            meta_svd = meta[meta.svdsnp]
+            meta_svd = meta[meta.printsnp]
 
             # multiply ahat by the weights
-            x_I = snps.loc[ind[meta.svdsnp],'Winv_ahat_I'] = weights.invert_weights(
+            x_I = snps.loc[ind[meta.printsnp],'Winv_ahat_I'] = weights.invert_weights(
                     R, R2, sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat_I')
-            x_h = snps.loc[ind[meta.svdsnp],'Winv_ahat_h'] = weights.invert_weights(
+            x_h = snps.loc[ind[meta.printsnp],'Winv_ahat_h'] = weights.invert_weights(
                     R, R2, sigma2g, N, meta_svd.ahat.values, mode='Winv_ahat_h')
 
         print('writing processed sumstats')
         with gzip.open('{}/{}.pss.gz'.format(dirname, c), 'w') as f:
-            snps.loc[snps.svdsnp,['N',
+            snps.loc[snps.printsnp,['N',
                 'Winv_ahat_I',
                 'Winv_ahat_h'
                 ]].to_csv(
@@ -128,36 +129,44 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sumstats-stem', #required=True,
+    # required arguments
+    parser.add_argument('--sumstats-stem', required=True,
             default='/groups/price/yakir/data/sumstats.hm3/processed/UKBiobank_Height3',
             help='path to sumstats.gz files, not including ".sumstats.gz" extension')
 
-    parser.add_argument('--bfile-chr',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/plink_files/' + \
-                '1000G.EUR.QC.',
-            help='path to plink bfile of reference panel to use, not including chrom num.')
-    parser.add_argument('--svd-stem',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/svds_95percent/',
-            help='path to truncated svds of reference panel, by LD block')
-    parser.add_argument('--svd-snps',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/'+\
-                    '1000G_hm3_noMHC.rsid',
-            help='The set of snps for which the svds are computed')
-    parser.add_argument('--ld-blocks',
-            default='/groups/price/yakir/data/reference/pickrell_ldblocks.hg19.eur.bed',
-            help='path to UCSC bed file containing one bed interval per LD' + \
-                    ' block')
-    parser.add_argument('--ldscores-chr',
-            default='/groups/price/ldsc/reference_files/1000G_EUR_Phase3/LDscore/LDscore.',
-            help='path to LD scores at a smallish set of SNPs. LD should be computed '+\
-                    'to all potentially causal snps. This is used for '+\
-                    'heritability estimation')
+    # optional arguments
     parser.add_argument('--refpanel-name', default='KG3.95',
-            help='suffix added to the directory created for storing output')
+            help='suffix added to the directory created for storing output. '+\
+                    'Default is KG3.95, corresponding to 1KG Phase 3 reference panel '+\
+                    'processed with default parameters by preprocessrefpanel.py.')
     parser.add_argument('-no-M-5-50', default=False, action='store_true',
-            help='dont filter to SNPs with MAF >= 5% when estimating heritabilities')
-    parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int)
+            help='Dont filter to SNPs with MAF >= 5% when estimating heritabilities')
+    parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int,
+            help='Space-delimited list of chromosomes to analyze. Default is 1..22')
 
+    # configurable arguments
+    parser.add_argument('--config', default=None,
+            help='Path to a json file with values for other parameters. ' +\
+                    'Values in this file will be overridden by any values passed ' +\
+                    'explicitly via the command line.')
+    parser.add_argument('--svd-stem', default=None,
+            help='Path to directory containing truncated svds of reference panel, by LD '+\
+                    'block, as produced by preprocessrefpanel.py. If not supplied, will be '+\
+                    'read from config file.')
+    parser.add_argument('--print-snps', default=None,
+            help='Path to set of potentially typed SNPs. If not supplied, will be read '+\
+                    'from config file.')
+    parser.add_argument('--ldscores-chr', default=None,
+            help='Path to LD scores at a smallish set of SNPs (~1M). LD should be computed '+\
+                    'to all potentially causal snps. Used for heritability estimation. '+\
+                    'If not supplied, will be read from config file.')
+
+    print('=====')
+    print(' '.join(sys.argv))
+    print('=====')
     args = parser.parse_args()
+    config.add_default_params(args)
     pretty.print_namespace(args)
+    print('=====')
+
     main(args)

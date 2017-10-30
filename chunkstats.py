@@ -3,7 +3,7 @@ import gc
 import numpy as np
 import pandas as pd
 import scipy.stats as st
-import pyutils.fs as fs
+import ypy.fs as fs
 
 # make idependent blocks
 def collapse_to_chunks(ldblocks, numerators, denominators, numblocks):
@@ -107,7 +107,6 @@ def residualize(chunk_nums, chunk_denoms, num_background, k):
     return q, r, mux, muy
 
 # do sign-flipping to get p-value
-#TODO: probably remove medrank and thresh options
 def signflip(q, T, printmem=True, mode='sum'):
     def mask(a, t):
         a_ = a.copy()
@@ -116,11 +115,11 @@ def signflip(q, T, printmem=True, mode='sum'):
 
     print('before sign-flipping:', fs.mem(), 'MB')
 
-    if mode == 'sum':
+    if mode == 'sum': # use sum of q as the test statistic
         score = q.sum()
-    elif mode == 'medrank':
+    elif mode == 'medrank': # examine how far the rank of 0 deviates from the 50th percentile
         score = np.searchsorted(np.sort(q), 0)/len(q) - 0.5
-    elif mode == 'thresh':
+    elif mode == 'thresh': # threshold q at some absolute magnitude threshold
         top = np.percentile(np.abs(q), 75)
         print(top)
         ts = np.arange(0, top, top/10)
