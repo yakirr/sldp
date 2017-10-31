@@ -1,6 +1,6 @@
 # SLDP (Signed LD Profile) regression `v1.0`
 
-SLDP regression is a method for assessing whether a signed functional annotation has a directional relationship to the causal effects of SNPs on a heritable trait. This repository contains code for the SLDP regression method as well as tools required for preprocessing data for use with SLDP regression.
+SLDP regression is a method for looking for a directional effect of a signed functional annotation on a heritable trait using GWAS summary statistics. This repository contains code for the SLDP regression method as well as tools required for preprocessing data for use with SLDP regression.
 
 ## Installation
 
@@ -19,7 +19,7 @@ If you prefer to install `sldp` without pip, just clone this repository, togethe
 
 To verify that the installation went okay, run
 ```
-sldp --help
+sldp -h
 ```
 to print a list of all command-line options. If this command fails, there was a problem with the installation.
 
