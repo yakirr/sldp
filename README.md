@@ -1,4 +1,4 @@
-#SLDP (Signed LD Profile) regression `v1.0`
+# SLDP (Signed LD Profile) regression `v1.0`
 
 SLDP regression is a method for assessing whether a signed functional annotation has a directional relationship to the causal effects of SNPs on a heritable trait. This repository contains code for the SLDP regression method as well as tools required for preprocessing data for use with SLDP regression.
 
@@ -35,7 +35,7 @@ You can download signed LD profiles (as well as raw signed functional annotation
 You can download all required reference panel information, computed using 1000 Genomes Phase 3 Europeans, from the [sldp data page](https://data.broadinstitute.org/alkesgroup/SLDP/).
 
 
-##Citation
+## Citation
 
 If you use `sldp`, please cite
 
