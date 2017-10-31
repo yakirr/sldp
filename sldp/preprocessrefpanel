@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import gprim.dataset as gd
 import ypy.memo as memo
+import ypy.fs as fs
 import ypy.pretty as pretty
 import config
 
@@ -13,6 +14,7 @@ def main(args):
     # basic initialization
     mhc = [25684587, 35455756]
     refpanel = gd.Dataset(args.bfile_chr)
+    fs.makedir_for_file(args.svd_stem)
 
     # read in ld blocks, remove MHC, read SNPs to print
     ldblocks = pd.read_csv(args.ld_blocks, delim_whitespace=True, header=None,

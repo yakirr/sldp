@@ -132,7 +132,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # required arguments
     parser.add_argument('--sumstats-stem', required=True,
-            default='/groups/price/yakir/data/sumstats.hm3/processed/UKBiobank_Height3',
             help='path to sumstats.gz files, not including ".sumstats.gz" extension')
 
     # optional arguments
