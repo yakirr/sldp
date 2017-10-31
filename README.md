@@ -23,7 +23,7 @@ sldp -h
 ```
 to print a list of all command-line options. If this command fails, there was a problem with the installation.
 
-Once this works, take a look at our [short tutorial](https://github.com/yakirr/sldp/wiki) on how to use `sldp`.
+Once this works, take a look at our [wiki](https://github.com/yakirr/sldp/wiki) for a short tutorial on how to use `sldp`.
 
 
 ## Where can I get signed LD profiles?
