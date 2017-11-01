@@ -1,4 +1,4 @@
-# SLDP (Signed LD Profile) regression `v1.0`
+# SLDP (Signed LD Profile) regression
 
 SLDP regression is a method for looking for a directional effect of a signed functional annotation on a heritable trait using GWAS summary statistics. This repository contains code for the SLDP regression method as well as tools required for preprocessing data for use with SLDP regression.
 

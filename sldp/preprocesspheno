@@ -8,8 +8,8 @@ import gprim.dataset as gd
 import ypy.pretty as pretty
 import ypy.fs as fs
 import ypy.memo as memo
-import weights
-import config
+import sldp.weights as weights
+import sldp.config as config
 
 
 def main(args):
@@ -140,7 +140,7 @@ if __name__ == '__main__':
                     'Default is KG3.95, corresponding to 1KG Phase 3 reference panel '+\
                     'processed with default parameters by preprocessrefpanel.py.')
     parser.add_argument('-no-M-5-50', default=False, action='store_true',
-            help='Dont filter to SNPs with MAF >= 5% when estimating heritabilities')
+            help='Dont filter to SNPs with MAF >= 0.05 when estimating heritabilities')
     parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int,
             help='Space-delimited list of chromosomes to analyze. Default is 1..22')
 

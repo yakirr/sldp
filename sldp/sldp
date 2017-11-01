@@ -7,9 +7,9 @@ import gprim.annotation as ga
 import gprim.dataset as gd
 import ypy.pretty as pretty
 import ypy.memo as memo
-import weights
-import chunkstats as cs
-import config
+import sldp.weights as weights
+import sldp.chunkstats as cs
+import sldp.config as config
 
 
 def main(args):

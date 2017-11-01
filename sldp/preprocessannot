@@ -7,7 +7,7 @@ import gprim.annotation as ga
 import gprim.dataset as gd
 import ypy.pretty as pretty
 import ypy.memo as memo
-import config
+import sldp.config as config
 
 
 def main(args):

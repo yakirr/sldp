@@ -7,7 +7,7 @@ import gprim.dataset as gd
 import ypy.memo as memo
 import ypy.fs as fs
 import ypy.pretty as pretty
-import config
+import sldp.config as config
 
 
 def main(args):
