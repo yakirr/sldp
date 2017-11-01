@@ -15,7 +15,7 @@ import sldp.config as config
 def main(args):
     # basic initialization
     mhc_bp = [25684587, 35455756]
-    refpanel = gd.Dataset(args.bfile_chr)
+    refpanel = gd.Dataset(args.bfile_reg_chr)
     pheno_name = args.pss_chr.split('/')[-2].replace('.KG3.95','')
     if args.seed is not None:
         np.random.seed(args.seed)
@@ -142,6 +142,10 @@ def main(args):
     results = pd.DataFrame()
     for i, name in enumerate(marginal_names):
         print(i, name)
+        # metadata about v
+        sqnorm = marginal_infos.loc[name[:-2], 'sqnorm']
+        supp = marginal_infos.loc[name[:-2], 'supp']
+
         k = marginal_names.index(name)
         mu = cs.get_est(sum(chunk_nums), sum(chunk_denoms), k, len(background_names))
         results = results.append({
@@ -169,26 +173,26 @@ def main(args):
         results.loc[i,'p'] = p
         if args.more_stats:
             import scipy.stats as st
+            # add metadata about q
             results.loc[i,'qkurtosis'] = st.kurtosis(q)
             results.loc[i,'qstd'] = np.std(q)
             results.loc[i,'p_jk'] = st.chi2.sf((mu/se)**2,1)
+            results.loc[i,'sqnorm'] = sqnorm
+            results.loc[i,'supp'] = supp
 
         # jackknife
         se = cs.jackknife_se(mu, loo_nums, loo_denoms, k, len(background_names))
         results.loc[i,'mu'] = mu
         results.loc[i,'se(mu)'] = se
 
-        # add metadata about v and scale point estimate to get r_f
-        for prop in ['supp', 'sqnorm']:
-            results.loc[i,prop] = marginal_infos.loc[name[:-2], prop]
 
         # add estimates of r_f and h2v
         M = marginal_infos.loc[name[:-2],'M']
         results.loc[i,'h2g'] = h2g
         results.loc[i,'r_f'] = mu * np.sqrt(
-                results.loc[i].sqnorm / h2g)
+                sqnorm / h2g)
         results.loc[i,'h2v_h2g'] = results.loc[i].r_f**2 - \
-                results.loc[i].jk_se**2 * results.loc[i].sqnorm / (M*sigma2g)
+                results.loc[i,'se(mu)']**2 * sqnorm / (M*sigma2g)
         results.loc[i,'h2v'] = results.loc[i].h2v_h2g * h2g
         results.to_csv(args.outfile_stem + '.gwresults', sep='\t', index=False, na_rep='nan')
 
