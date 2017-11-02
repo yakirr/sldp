@@ -160,6 +160,9 @@ if __name__ == '__main__':
             help='Path to LD scores at a smallish set of SNPs (~1M). LD should be computed '+\
                     'to all potentially causal snps. Used for heritability estimation. '+\
                     'If not supplied, will be read from config file.')
+    parser.add_argument('--ld-blocks', default=None,
+            help='Path to UCSC bed file containing one bed interval per LD block. If '+\
+                    'not supplied, will be read from config file.')
 
     print('=====')
     print(' '.join(sys.argv))
