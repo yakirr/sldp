@@ -149,6 +149,9 @@ if __name__ == '__main__':
             help='Path to a json file with values for other parameters. ' +\
                     'Values in this file will be overridden by any values passed ' +\
                     'explicitly via the command line.')
+    parser.add_argument('--bfile-chr', default=None,
+            help='Path to plink bfile of reference panel to use, not including ' +\
+                    'chromosome number. If not supplied, will be read from config file.')
     parser.add_argument('--svd-stem', default=None,
             help='Path to directory containing truncated svds of reference panel, by LD '+\
                     'block, as produced by preprocessrefpanel.py. If not supplied, will be '+\
