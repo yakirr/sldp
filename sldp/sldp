@@ -10,6 +10,7 @@ import ypy.memo as memo
 import sldp.weights as weights
 import sldp.chunkstats as cs
 import sldp.config as config
+import sldp.storyteller as storyteller
 
 
 def main(args):
@@ -146,6 +147,7 @@ def main(args):
         sqnorm = marginal_infos.loc[name[:-2], 'sqnorm']
         supp = marginal_infos.loc[name[:-2], 'supp']
 
+        # estimate mu and initialize results row
         k = marginal_names.index(name)
         mu = cs.get_est(sum(chunk_nums), sum(chunk_denoms), k, len(background_names))
         results = results.append({
@@ -171,29 +173,33 @@ def main(args):
         p, z = cs.signflip(q, args.T, printmem=True, mode=args.stat)
         results.loc[i,'z'] = z
         results.loc[i,'p'] = p
+
+        # nominate interesting loci if desired
+        if results.loc[i].p < args.tell_me_stories:
+            storyteller.write(args, name, results.loc[i].z)
+
+        # add more output if desired
         if args.more_stats:
             import scipy.stats as st
-            # add metadata about q
             results.loc[i,'qkurtosis'] = st.kurtosis(q)
             results.loc[i,'qstd'] = np.std(q)
             results.loc[i,'p_jk'] = st.chi2.sf((mu/se)**2,1)
             results.loc[i,'sqnorm'] = sqnorm
-            results.loc[i,'supp'] = supp
 
         # jackknife
         se = cs.jackknife_se(mu, loo_nums, loo_denoms, k, len(background_names))
         results.loc[i,'mu'] = mu
         results.loc[i,'se(mu)'] = se
 
-
-        # add estimates of r_f and h2v
+        # add estimates of rf, h2v, and other associated quantities
         M = marginal_infos.loc[name[:-2],'M']
         results.loc[i,'h2g'] = h2g
-        results.loc[i,'r_f'] = mu * np.sqrt(
+        results.loc[i,'rf'] = mu * np.sqrt(
                 sqnorm / h2g)
-        results.loc[i,'h2v_h2g'] = results.loc[i].r_f**2 - \
+        results.loc[i,'h2v/h2g'] = results.loc[i].rf**2 - \
                 results.loc[i,'se(mu)']**2 * sqnorm / (M*sigma2g)
-        results.loc[i,'h2v'] = results.loc[i].h2v_h2g * h2g
+        results.loc[i,'h2v'] = results.loc[i,'h2v/h2g'] * h2g
+        results.loc[i,'supp(v)/M'] = supp/M
         results.to_csv(args.outfile_stem + '.gwresults', sep='\t', index=False, na_rep='nan')
 
     print(results)
@@ -222,14 +228,15 @@ if __name__ == '__main__':
                     'the covariance in each independent block of genome (.chunks files), '+\
                     'and the coefficients required to residualize any background '+\
                         'annotations out of the other annotations being analyzed.')
-    parser.add_argument('-tell-me-stories', default=False, action='store_true',
-            help='COMING SOON. '+\
-                    'Print information about SNPs or loci that may be promising to study. '+\
+    parser.add_argument('--tell-me-stories', default=0.,
+            help='Experimental. For associations with a p-value less than this number, '+\
+                    'print information about SNPs or loci that may be promising to study. '+\
                     'This includes: '+\
                     'Genome-wide significant SNPs with large values of the signed LD '+\
                         ' profile, and '+\
                     'lists of loci where the signed LD profile is highly correlated with '+\
-                        'the GWAS signal in a direction consistent with the global effect.')
+                        'the GWAS signal in a direction consistent with the global effect. '+\
+                    'Default value is 0.')
     parser.add_argument('-more-stats', default=False, action='store_true',
             help='Print additional statistis about q in results file')
     parser.add_argument('--T', type=int, default=1000000,

@@ -8,7 +8,7 @@ def add_default_params(args):
         # overwrite with any non-None entries, resolving conflicts in favor of args
         config.update({
             k:v for k,v in args.__dict__.items()
-            if v is not None
+            if (v is not None and v != []) or k not in config.keys()
             })
         # replace information in args
         args.__dict__ = config
