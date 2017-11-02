@@ -234,7 +234,7 @@ if __name__ == '__main__':
                     'and the coefficients required to residualize any background '+\
                         'annotations out of the other annotations being analyzed.')
     parser.add_argument('--tell-me-stories', default=0.,
-            help='Experimental. For associations with a p-value less than this number, '+\
+            help='!!Experimental!! For associations with a p-value less than this number, '+\
                     'print information about loci that may be promising to study. '+\
                     'This will produce plots of (potentially overlapping) loci where the '+\
                     'signed LD profile is highly correlated with the GWAS signal in a '+\
