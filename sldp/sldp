@@ -62,12 +62,15 @@ def main(args):
 
         # read sumstats
         print('reading sumstats')
-        ss = pd.read_csv(args.pss_chr+str(c)+'.pss.gz', sep='\t',
-                usecols=['N',args.weights])
+        ss = pd.read_csv(args.pss_chr+str(c)+'.pss.gz', sep='\t')
         print(np.isnan(ss[args.weights]).sum(), 'sumstats nans out of', len(ss))
         snps['Winv_ahat'] = ss[args.weights]
         snps['N'] = ss.N
         snps['typed'] = snps.Winv_ahat.notnull()
+        if args.chi2_thresh > 0:
+            print('applying chi2 threshold of', args.chi2_thresh)
+            snps.typed &= (ss.Winv_ahat_I**2 * ss.N > args.chi2_thresh)
+            print(snps.typed.sum(), 'typed snps left')
 
         # read annotations
         print('reading annotations')
@@ -176,7 +179,9 @@ def main(args):
 
         # nominate interesting loci if desired
         if results.loc[i].p < args.tell_me_stories:
-            storyteller.write(args, name, results.loc[i].z)
+            storyteller.write(args.outfile_stem+'.'+name+'.loci',
+                    args, name, background_names, mux, muy, results.loc[i].z,
+                    corr_thresh=args.story_corr_thresh)
 
         # add more output if desired
         if args.more_stats:
@@ -230,13 +235,14 @@ if __name__ == '__main__':
                         'annotations out of the other annotations being analyzed.')
     parser.add_argument('--tell-me-stories', default=0.,
             help='Experimental. For associations with a p-value less than this number, '+\
-                    'print information about SNPs or loci that may be promising to study. '+\
-                    'This includes: '+\
-                    'Genome-wide significant SNPs with large values of the signed LD '+\
-                        ' profile, and '+\
-                    'lists of loci where the signed LD profile is highly correlated with '+\
-                        'the GWAS signal in a direction consistent with the global effect. '+\
+                    'print information about loci that may be promising to study. '+\
+                    'This will produce plots of (potentially overlapping) loci where the '+\
+                    'signed LD profile is highly correlated with the GWAS signal in a '+\
+                    'direction consistent with the global effect. '+\
                     'Default value is 0.')
+    parser.add_argument('--story-corr-thresh', default=0.8, type=float,
+            help='The threshold to use for correlation between Rv and alphahat in order '+\
+                    'for a locus to be considered worthy of a story')
     parser.add_argument('-more-stats', default=False, action='store_true',
             help='Print additional statistis about q in results file')
     parser.add_argument('--T', type=int, default=1000000,
@@ -251,6 +257,8 @@ if __name__ == '__main__':
     parser.add_argument('--stat', default='sum',
             help='*experimental* Which statistic to use for hypothesis testing. Options '+\
                     'are: sum, medrank, or thresh.')
+    parser.add_argument('--chi2-thresh', default=0, type=float,
+            help='only use SNPs with a chi2 above this number for the regression')
     parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int,
             help='Space-delimited list of chromosomes to analyze. Default is 1..22')
 

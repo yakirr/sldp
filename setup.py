@@ -13,6 +13,7 @@ setup(name='sldp',
         'numpy',
         'pandas',
         'scipy',
+        'matplotlib',
         'gprim',
         'ypy'
         ],
