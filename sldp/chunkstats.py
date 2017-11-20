@@ -147,7 +147,7 @@ def signflip(q, T, printmem=True, mode='sum'):
             null[current:current+block] = np.array([s[np.argmax(np.abs(s))] for s in sums])
 
         current += block
-        p = ((np.abs(null) >= np.abs(score)).sum()) / float(current)
+        p = max(1, ((np.abs(null) >= np.abs(score)).sum())) / float(current)
         del s; gc.collect()
         if p >= 0.01:
             null = null[:current]

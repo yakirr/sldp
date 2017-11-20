@@ -1,18 +1,20 @@
 #!/usr/bin/env python
 from __future__ import print_function, division
-import argparse, gzip, os, gc, time, sys
-import numpy as np
-import pandas as pd
-import gprim.annotation as ga
-import gprim.dataset as gd
-import ypy.pretty as pretty
-import ypy.fs as fs
-import ypy.memo as memo
-import sldp.weights as weights
+import argparse, sys
 import sldp.config as config
+import ypy.pretty as pretty
 
 
 def main(args):
+    import gzip, os, gc, time
+    import numpy as np
+    import pandas as pd
+    import gprim.annotation as ga
+    import gprim.dataset as gd
+    import ypy.fs as fs
+    import ypy.memo as memo
+    import sldp.weights as weights
+
     # read in refpanel, ld blocks, and svd snps
     refpanel = gd.Dataset(args.bfile_chr)
     ldblocks = pd.read_csv(args.ld_blocks, delim_whitespace=True, header=None,
