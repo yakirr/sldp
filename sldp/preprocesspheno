@@ -6,6 +6,7 @@ import ypy.pretty as pretty
 
 
 def main(args):
+    print('initializing...')
     import gzip, os, gc, time
     import numpy as np
     import pandas as pd

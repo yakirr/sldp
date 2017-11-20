@@ -1,19 +1,22 @@
 #!/usr/bin/env python
 from __future__ import print_function, division
-import argparse, os, time, sys
-import numpy as np
-import pandas as pd
-import gprim.annotation as ga
-import gprim.dataset as gd
-import ypy.pretty as pretty
-import ypy.memo as memo
-import sldp.weights as weights
-import sldp.chunkstats as cs
+import argparse, sys
 import sldp.config as config
-import sldp.storyteller as storyteller
+import ypy.pretty as pretty
 
 
 def main(args):
+    print('initializing...')
+    import os, time
+    import numpy as np
+    import pandas as pd
+    import gprim.annotation as ga
+    import gprim.dataset as gd
+    import ypy.memo as memo
+    import sldp.weights as weights
+    import sldp.chunkstats as cs
+    import sldp.storyteller as storyteller
+
     # basic initialization
     mhc_bp = [25684587, 35455756]
     refpanel = gd.Dataset(args.bfile_reg_chr)

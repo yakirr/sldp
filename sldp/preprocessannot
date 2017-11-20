@@ -1,16 +1,18 @@
 #!/usr/bin/env python
 from __future__ import print_function, division
-import argparse, gzip, gc, time, sys
-import numpy as np
-import pandas as pd
-import gprim.annotation as ga
-import gprim.dataset as gd
-import ypy.pretty as pretty
-import ypy.memo as memo
+import argparse, sys
 import sldp.config as config
-
+import ypy.pretty as pretty
 
 def main(args):
+    print('initializing...')
+    import gzip, gc, time
+    import numpy as np
+    import pandas as pd
+    import gprim.annotation as ga
+    import gprim.dataset as gd
+    import ypy.memo as memo
+
     # basic initialization
     mhc_bp = [25684587, 35455756]
     refpanel = gd.Dataset(args.bfile_chr)
