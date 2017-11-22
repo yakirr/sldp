@@ -54,6 +54,7 @@ def main(args):
     sigma2g = (meanchi2 - 1)/meanNl2
     h2g = sigma2g * M
     h2g = max(h2g, 0.03) #0.03 is a somewhat arbitrarily chosen minimum
+    print('mean chi2:', meanchi2)
     print('h2g estimated at:', h2g, 'sigma2g =', sigma2g)
 
     # write h2g results to file
