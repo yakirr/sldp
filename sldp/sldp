@@ -109,7 +109,7 @@ def main(args):
             ldblocks.loc[ldblock.name, 'snpind_end'] = max(meta.index)+1 # for verbose
 
             # load regression weights and prepare for regression computation
-            meta_t = meta[meta.typed]
+            meta_t = meta[meta.typed.values]
             N = meta_t.N.mean()
             if args.weights == 'Winv_ahat_h' or args.weights == 'Winv_ahat_hlN':
                 R = np.load(args.svd_stem+str(ldblock.name)+'.R.npz')
@@ -127,13 +127,13 @@ def main(args):
             # multiply ahat by the weights
             Winv_RV = weights.invert_weights(
                     R, R2, sigma2g, N, meta[background_names+marginal_names].values,
-                    typed=meta.typed, mode=args.weights)
+                    typed=meta.typed.values, mode=args.weights)
 
             numerators[ldblock.name] = \
                 (meta_t[background_names+marginal_names].T.dot(
                     meta_t.Winv_ahat)).values/1e6
             denominators[ldblock.name] = meta_t[background_names+marginal_names].T.dot(
-                    Winv_RV[meta.typed]).values/1e6
+                    Winv_RV[meta.typed.values]).values/1e6
         memo.reset()
 
     # get data for jackknifing
