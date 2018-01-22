@@ -110,8 +110,8 @@ def main(args):
                 continue
             R = np.load(args.svd_stem+str(ldblock.name)+'.R.npz')
             R2 = np.load(args.svd_stem+str(ldblock.name)+'.R2.npz')
-            N = meta[meta.typed].N.mean()
-            meta_svd = meta[meta.printsnp]
+            N = meta[meta.typed.values].N.mean()
+            meta_svd = meta[meta.printsnp.values]
 
             # multiply ahat by the weights
             x_I = snps.loc[ind[meta.printsnp],'Winv_ahat_I'] = weights.invert_weights(
