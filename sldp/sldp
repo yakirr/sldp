@@ -10,6 +10,7 @@ def main(args):
     import os, time
     import numpy as np
     import pandas as pd
+    import scipy.stats as st
     import gprim.annotation as ga
     import gprim.dataset as gd
     import ypy.memo as memo
@@ -176,7 +177,11 @@ def main(args):
 
 
         # exact sign-flipping
-        p, z = cs.signflip(q, args.T, printmem=True, mode=args.stat)
+        if args.fastp:
+            z = np.sum(q)/np.linalg.norm(q)
+            p = st.chi2.sf(z**2, 1)
+        else:
+            p, z = cs.signflip(q, args.T, printmem=True, mode=args.stat)
         results.loc[i,'z'] = z
         results.loc[i,'p'] = p
 
@@ -188,7 +193,6 @@ def main(args):
 
         # add more output if desired
         if args.more_stats:
-            import scipy.stats as st
             results.loc[i,'qkurtosis'] = st.kurtosis(q)
             results.loc[i,'qstd'] = np.std(q)
             results.loc[i,'p_jk'] = st.chi2.sf((mu/se)**2,1)
@@ -236,6 +240,8 @@ if __name__ == '__main__':
                     'the covariance in each independent block of genome (.chunks files), '+\
                     'and the coefficients required to residualize any background '+\
                         'annotations out of the other annotations being analyzed.')
+    parser.add_argument('-fastp', default=False, action='store_true',
+            help='Estimate p-values fast (without permutation)')
     parser.add_argument('--tell-me-stories', default=0.,
             help='!!Experimental!! For associations with a p-value less than this number, '+\
                     'print information about loci that may be promising to study. '+\

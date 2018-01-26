@@ -49,13 +49,24 @@ def main(args):
     print(len(ssld), 'hm3 snps with sumstats after merge.')
 
     # estimate heritability using aggregate estimator
-    meanchi2 = (ssld.Z**2).mean()
-    meanNl2 = (ssld.N*ssld.L2).mean()
-    sigma2g = (meanchi2 - 1)/meanNl2
-    h2g = sigma2g * M
-    h2g = max(h2g, 0.03) #0.03 is a somewhat arbitrarily chosen minimum
+    def esth2g(ssld):
+        meanchi2 = (ssld.Z**2).mean()
+        meanNl2 = (ssld.N*ssld.L2).mean()
+        sigma2g = (meanchi2 - 1)/meanNl2
+        h2g = sigma2g * M
+        K = M/meanNl2 # h2g = K (meanchi2 - 1)
+        return h2g, sigma2g, meanchi2, K
+    h2g, sigma2g, meanchi2, K = esth2g(ssld)
+    h2g = max(h2g, 0.03) #0.03 is an arbitrarily chosen minimum
     print('mean chi2:', meanchi2)
     print('h2g estimated at:', h2g, 'sigma2g =', sigma2g)
+    if args.set_h2g:
+        print('scaling Z-scores to achieve h2g of', args.set_h2g)
+        norm = meanchi2 / (1 + args.set_h2g/ K)
+        print('dividing all z-scores by', np.sqrt(norm))
+        ssld.Z /= np.sqrt(norm)
+        h2g, sigma2g, _, _ = esth2g(ssld)
+        print('h2g is now', h2g)
 
     # write h2g results to file
     dirname = args.sumstats_stem + '.' + args.refpanel_name
@@ -145,6 +156,8 @@ if __name__ == '__main__':
                     'processed with default parameters by preprocessrefpanel.py.')
     parser.add_argument('-no-M-5-50', default=False, action='store_true',
             help='Dont filter to SNPs with MAF >= 0.05 when estimating heritabilities')
+    parser.add_argument('--set-h2g', default=None, type=float,
+            help='Scale Z-scores to achieve this approximate heritability')
     parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int,
             help='Space-delimited list of chromosomes to analyze. Default is 1..22')
 
