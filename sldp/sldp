@@ -164,26 +164,35 @@ def main(args):
 
         # compute q
         q, r, mux, muy = cs.residualize(chunk_nums, chunk_denoms, len(background_names), k)
-        if args.verbose:
-            print('writing verbose results to', args.outfile_stem+'.'+name)
+
+
+        # p-values
+        if args.bothp or not args.fastp:
+            p_emp, z_emp = cs.signflip(q, args.T, printmem=True, mode=args.stat)
+            results[i,'z'] = z_emp
+            results[i,'p'] = p_emp
+        if args.bothp or args.fastp:
+            z_fast = np.sum(q)/np.linalg.norm(q)
+            p_fast = st.chi2.sf(z**2, 1)
+            results.loc[i, 'z_fast'] = z_fast
+            results.loc[i, 'p_fast'] = p_fast
+        if args.fastp and not args.bothp: # if only fastp, rename the output columns
+            results.loc[i,'p'] = results.loc[i,'p_fast']
+            results.loc[i,'z'] = results.loc[i,'z_fast']
+            results.drop(['pfast','zfast'], axis=1, inplace=True)
+
+        # print verbose information if required
+        if p < args.verbose_thresh:
+            fname = args.outfile_stem+'.'+pheno_name+'.'+name
+            print('writing verbose results to', fname)
             chunkinfo['q'] = q
             chunkinfo['r'] = r
-            chunkinfo.to_csv(args.outfile_stem+'.'+name+'.chunks', sep='\t', index=False)
+            chunkinfo.to_csv(fname+'.chunks', sep='\t', index=False)
             coeffs = pd.DataFrame()
             coeffs['annot'] = background_names
             coeffs['mux'] = mux
             coeffs['muy'] = muy
-            coeffs.to_csv(args.outfile_stem+'.'+name+'.coeffs', sep='\t', index=False)
-
-
-        # exact sign-flipping
-        if args.fastp:
-            z = np.sum(q)/np.linalg.norm(q)
-            p = st.chi2.sf(z**2, 1)
-        else:
-            p, z = cs.signflip(q, args.T, printmem=True, mode=args.stat)
-        results.loc[i,'z'] = z
-        results.loc[i,'p'] = p
+            coeffs.to_csv(fname+'.coeffs', sep='\t', index=False)
 
         # nominate interesting loci if desired
         if results.loc[i].p < args.tell_me_stories:
@@ -234,14 +243,17 @@ if __name__ == '__main__':
                     'that SLDP will analyze against the phenotype.')
 
     # optional arguments
-    parser.add_argument('-verbose', default=False, action='store_true',
-            help='Print additional information about each association studied. This '+\
-                    'includes: '+\
+    parser.add_argument('--verbose-thresh', default=0., type=float,
+            help='Print additional information about each association studied with a '+\
+                    'p-value below this number. (Default is 0.) This includes: '+\
                     'the covariance in each independent block of genome (.chunks files), '+\
                     'and the coefficients required to residualize any background '+\
                         'annotations out of the other annotations being analyzed.')
     parser.add_argument('-fastp', default=False, action='store_true',
             help='Estimate p-values fast (without permutation)')
+    parser.add_argument('-bothp', default=False, action='store_true',
+            help='Print both fastp p-values (as p_fast) and normal p-values. '+\
+                    'Takes precedence over fastp')
     parser.add_argument('--tell-me-stories', default=0.,
             help='!!Experimental!! For associations with a p-value less than this number, '+\
                     'print information about loci that may be promising to study. '+\
