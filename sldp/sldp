@@ -169,11 +169,11 @@ def main(args):
         # p-values
         if args.bothp or not args.fastp:
             p_emp, z_emp = cs.signflip(q, args.T, printmem=True, mode=args.stat)
-            results[i,'z'] = z_emp
-            results[i,'p'] = p_emp
+            results.loc[i,'z'] = z_emp
+            results.loc[i,'p'] = p_emp
         if args.bothp or args.fastp:
             z_fast = np.sum(q)/np.linalg.norm(q)
-            p_fast = st.chi2.sf(z**2, 1)
+            p_fast = st.chi2.sf(z_fast**2, 1)
             results.loc[i, 'z_fast'] = z_fast
             results.loc[i, 'p_fast'] = p_fast
         if args.fastp and not args.bothp: # if only fastp, rename the output columns
@@ -182,7 +182,7 @@ def main(args):
             results.drop(['pfast','zfast'], axis=1, inplace=True)
 
         # print verbose information if required
-        if p < args.verbose_thresh:
+        if results.loc[i].p < args.verbose_thresh:
             fname = args.outfile_stem+'.'+pheno_name+'.'+name
             print('writing verbose results to', fname)
             chunkinfo['q'] = q
