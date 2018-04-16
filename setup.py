@@ -1,11 +1,11 @@
 from setuptools import setup
 
 setup(name='sldp',
-    version='1.0.8',
+    version='1.1.0',
     description='Signed LD profile regression',
     url='http://github.com/yakirr/sldp',
     author='Yakir Reshef',
-    author_email='yakir@seas.harvard.edu',
+    author_email='yreshef@broadinstitute.org',
     license='MIT',
     packages=['sldp'],
     scripts=['sldp/sldp','sldp/preprocessannot','sldp/preprocesspheno','sldp/preprocessrefpanel'],

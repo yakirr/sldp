@@ -228,19 +228,76 @@ def main(args):
     results.to_csv(args.outfile_stem + '.gwresults', sep='\t', index=False, na_rep='nan')
     print('done')
 
+# preprocess any sumstats that need preprocessing
+def preprocess_sumstats(args):
+    import os
+    if args.pss_chr is None:
+        print('Preprocessing', args.sumstats_stem+'.sumstats.gz...')
+        if args.config is None:
+            raise ValueError('ERROR: automatic pre-processing of a sumstats file requires '+\
+                    'specification of a config file; otherwise I dont know what '+\
+                    'parameters to use. If you want, you can preprocess the sumstats '+\
+                    'without a config file by running preprocesspheno manually')
+        print('Using config file', args.config, 'and default options')
+
+        # run the command
+        import sldp.preprocesspheno, copy
+        args_ = copy.copy(args)
+        args_.refpanel_name = 'default'
+        args_.no_M_5_50 = False
+        args_.set_h2g = None
+        sldp.preprocesspheno.main(args_)
+
+        # modify args to reflect existing of pss-chr files
+        args.pss_chr = args.sumstats_stem + '.default/'
+        args.sumstats_stem = None
+        print('== finished preprocessing sumstats ==')
+
+# preprocess any annotations that need preprocessing
+def preprocess_sannots(args):
+    import os
+
+    for sannot in args.sannot_chr:
+        unprocessed_chroms = [
+                c for c in args.chroms
+                if not (os.path.exists(sannot + str(c) + '.RV.gz') and
+                    os.path.exists(sannot + str(c) + '.info'))
+                ]
+        if len(unprocessed_chroms) > 0:
+            print('Preprocessing', sannot, 'at chromosomes', unprocessed_chroms)
+            if args.config is None:
+                raise ValueError('ERROR: automatic pre-processing of an annotation '+\
+                        'requires specification of a config file; otherwise I dont know what '+\
+                        'parameters to use. If you want, you can preprocess the annotation '+\
+                        'without a config file by running preprocessannot manually')
+            print('Using config file', args.config, 'and default options')
+
+            # run preprocessing command
+            import sldp.preprocessannot, copy
+            args_ = copy.copy(args)
+            args_.alpha = -1
+            args_.chroms = unprocessed_chroms
+            sldp.preprocessannot.main(args_)
+
+            print('== finished preprocessing annotation', sanno)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # required arguments
     parser.add_argument('--outfile-stem', required=True,
             help='Path to an output file stem.')
-    parser.add_argument('--pss-chr', required=True,
+    pheno = parser.add_mutually_exclusive_group(required=True)
+    pheno.add_argument('--pss-chr', default=None,
             help='Path to .pss.gz file, without chromosome number or .pss.gz extension. '+\
                     'This is the phenotype that SLDP will analyze.')
+    pheno.add_argument('--sumstats-stem', default=None,
+            help='Path to a .sumstats.gz file, not including ".sumstats.gz" extension. '+\
+                    'SLDP will process this into a set of .pss.gz files before running.')
     parser.add_argument('--sannot-chr', nargs='+', required=True,
             help='One or more (space-delimited) paths to gzipped annot files, without '+\
-                    'chromosome number or .sannot.gz extension. These are the annotations '+\
-                    'that SLDP will analyze against the phenotype.')
+                    'chromosome number or .sannot.gz/.RV.gz extension. These are the '+\
+                    'annotations that SLDP will analyze against the phenotype.')
 
     # optional arguments
     parser.add_argument('--verbose-thresh', default=0., type=float,
@@ -312,5 +369,8 @@ if __name__ == '__main__':
     config.add_default_params(args)
     pretty.print_namespace(args)
     print('=====')
+
+    preprocess_sumstats(args)
+    preprocess_sannots(args)
 
     main(args)
