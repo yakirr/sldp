@@ -234,7 +234,8 @@ def preprocess_sumstats(args):
     if args.pss_chr is None:
         unprocessed_chroms = [
                 c for c in args.chroms
-                if not os.path.exists(args.sumstats_stem + '.default/'+str(c)+'.pss.gz')
+                if not os.path.exists(
+                    args.sumstats_stem + '.' + args.refpanel_name + '/'+str(c)+'.pss.gz')
                 ]
         if len(unprocessed_chroms) > 0:
             print('Preprocessing', args.sumstats_stem+'.sumstats.gz... at', unprocessed_chroms)
@@ -248,14 +249,13 @@ def preprocess_sumstats(args):
             # run the command
             import sldp.preprocesspheno, copy
             args_ = copy.copy(args)
-            args_.refpanel_name = 'default'
             args_.no_M_5_50 = False
             args_.set_h2g = None
             args_.chroms = unprocessed_chroms
             sldp.preprocesspheno.main(args_)
 
         # modify args to reflect existing of pss-chr files
-        args.pss_chr = args.sumstats_stem + '.default/'
+        args.pss_chr = args.sumstats_stem + '.' + args.refpanel_name + '/'
         args.sumstats_stem = None
         print('== finished preprocessing sumstats ==')
 
