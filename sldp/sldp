@@ -232,21 +232,27 @@ def main(args):
 def preprocess_sumstats(args):
     import os
     if args.pss_chr is None:
-        print('Preprocessing', args.sumstats_stem+'.sumstats.gz...')
-        if args.config is None:
-            raise ValueError('ERROR: automatic pre-processing of a sumstats file requires '+\
-                    'specification of a config file; otherwise I dont know what '+\
-                    'parameters to use. If you want, you can preprocess the sumstats '+\
-                    'without a config file by running preprocesspheno manually')
-        print('Using config file', args.config, 'and default options')
+        unprocessed_chroms = [
+                c for c in args.chroms
+                if not os.path.exists(args.sumstats_stem + '.default/'+str(c)+'.pss.gz')
+                ]
+        if len(unprocessed_chroms) > 0:
+            print('Preprocessing', args.sumstats_stem+'.sumstats.gz... at', unprocessed_chroms)
+            if args.config is None:
+                raise ValueError('automatic pre-processing of a sumstats file requires '+\
+                        'specification of a config file; otherwise I dont know what '+\
+                        'parameters to use. If you want, you can preprocess the sumstats '+\
+                        'without a config file by running preprocesspheno manually')
+            print('Using config file', args.config, 'and default options')
 
-        # run the command
-        import sldp.preprocesspheno, copy
-        args_ = copy.copy(args)
-        args_.refpanel_name = 'default'
-        args_.no_M_5_50 = False
-        args_.set_h2g = None
-        sldp.preprocesspheno.main(args_)
+            # run the command
+            import sldp.preprocesspheno, copy
+            args_ = copy.copy(args)
+            args_.refpanel_name = 'default'
+            args_.no_M_5_50 = False
+            args_.set_h2g = None
+            args_.chroms = unprocessed_chroms
+            sldp.preprocesspheno.main(args_)
 
         # modify args to reflect existing of pss-chr files
         args.pss_chr = args.sumstats_stem + '.default/'
@@ -266,7 +272,7 @@ def preprocess_sannots(args):
         if len(unprocessed_chroms) > 0:
             print('Preprocessing', sannot, 'at chromosomes', unprocessed_chroms)
             if args.config is None:
-                raise ValueError('ERROR: automatic pre-processing of an annotation '+\
+                raise ValueError('automatic pre-processing of an annotation '+\
                         'requires specification of a config file; otherwise I dont know what '+\
                         'parameters to use. If you want, you can preprocess the annotation '+\
                         'without a config file by running preprocessannot manually')
