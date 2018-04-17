@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='sldp',
-    version='1.1.2',
+    version='1.1.3',
     description='Signed LD profile regression',
     url='http://github.com/yakirr/sldp',
     author='Yakir Reshef',

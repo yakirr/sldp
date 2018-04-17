@@ -62,10 +62,11 @@ def main(args):
                         np.power(2*snps.MAF.values*(1-snps.MAF.values),
                                 (1.+args.alpha)/2)[:,None]
 
-            # make room for RV
+            # make room for RV and make sure annotation values are treated as floats
             snps = pd.concat(
                     [snps, pd.DataFrame(np.zeros(snps[names].shape), columns=namesR)],
                     axis=1)
+            snps[names] = snps[names].astype(float)
 
             # compute simple statistics about annotation
             print('computing basic statistics and writing')
