@@ -40,4 +40,4 @@ You can download all required reference panel information, computed using 1000 G
 If you use `sldp`, please cite
 
 [Reshef, et al. Detecting genome-wide directional effects of transcription factor binding on polygenic disease risk.
-BiorXiv, 2017.](https://www.biorxiv.org/content/early/2017/10/17/204685)
+BiorXiv, 2018.](https://www.biorxiv.org/content/early/2018/05/04/204685)
