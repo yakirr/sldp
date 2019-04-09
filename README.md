@@ -34,6 +34,23 @@ You can download signed LD profiles (as well as raw signed functional annotation
 
 You can download all required reference panel information, computed using 1000 Genomes Phase 3 Europeans, from the [sldp data page](https://data.broadinstitute.org/alkesgroup/SLDP/).
 
+## Errata
+### Gene-set enrichment method for SLDP results
+In the published paper, we described a gene-set enrichment method for assessing whether a genome-wide signed relationship between an annotation and a trait is stronger in areas of the genome that are near a gene set of interest. The method was described in terms of a vector `s` that summarizes the gene-set of interest and a vector `q` that summarizes the SLDP association of interest. Both `s` and `q` have one entry per LD block: the `i`-th entry of `s` contains the number genes from the gene set that lie in the `i`-th LD block, and the `i`-th entry of `q` contains the estimated covariance across SNPs in the `i`-th LD block between the signed LD profile of the annotation in question and summary statistics of the trait in question. There are two errata related to this analysis, which we describe below.
+
+#### Description of gene-set enrichment analysis statistic
+In the paper, we stated that statistic we compute is
+
+![equation](https://latex.codecogs.com/png.latex?a%20%3A%3D%20%5Cfrac%7B%5Csum_i%20s_iq_i%7D%7B%5Csum_i%20s_i%7D)
+
+that is, the weighted average of `q` across the LD blocks with non-zero values of `s`. However, the statistic that is used in actuality is
+
+![equation](https://latex.codecogs.com/png.latex?%5Cfrac%7B%5Csum_i%20s_iq_i%7D%7B%5Csum_i%20s_i%7D%20-%20%5Cfrac%7B%5Csum_i%20%5Cmathbf%7B1%7D%28s_i%3D0%29%20q_i%7D%7B%5Csum_i%20%5Cmathbf%7B1%7D%28s_i%3D0%29%7D)
+
+that is, we take the difference between the weighted average of `q` across the LD blocks with non-zero values of `s` on the one hand, and the average of `q` across the LD blocks in which `s` is zero on the other hand.
+
+#### Computation of empirical p-values in gene-set enrichment analysis
+Our gene-set enrichment procedure computed p-values by shuffling `s` over LD blocks. However, the code that produced our published results computed a simple average of `q` rather than a weighted average when computing the statistic for the null distribution. Fixing the bug led to qualitatively similar results, although there are some differences. For more detail, download the corrected version of Supplementary Table 10A (coming soon) that lists the published and corrected p- and q-values of the gene-set enrichments highlighted in our publication.
 
 ## Citation
 
