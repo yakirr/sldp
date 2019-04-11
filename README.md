@@ -50,7 +50,7 @@ that is, the weighted average of `q` across the LD blocks with non-zero values o
 that is, we take the difference between the weighted average of `q` across the LD blocks with non-zero values of `s` on the one hand, and the average of `q` across the LD blocks in which `s` is zero on the other hand.
 
 #### Computation of empirical p-values in gene-set enrichment analysis
-Our gene-set enrichment procedure computed p-values by shuffling `s` over LD blocks. However, the code that produced our published results computed a simple average of `q` rather than a weighted average when computing the statistic for the null distribution. Fixing the bug led to qualitatively similar but not identical results. For more detail, download the corrected version of Supplementary Table 10A (coming soon) that lists the published and corrected p- and q-values of the gene-set enrichments highlighted in our publication.
+Our gene-set enrichment procedure computed p-values by shuffling `s` over LD blocks. However, the code that produced our published results computed a simple average of `q` rather than a weighted average when computing the statistic for the null distribution. Fixing the bug led to qualitatively similar but not identical results. For more detail, download the [corrected version of Supplementary Table 10](https://data.broadinstitute.org/alkesgroup/SLDP/errata/corrected_SuppTable10.xlsx) that lists the published and corrected p- and q-values of the gene-set enrichments highlighted in our publication.
 
 ## Citation
 
