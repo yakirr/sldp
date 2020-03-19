@@ -57,4 +57,4 @@ Our gene-set enrichment procedure computed p-values by shuffling `s` over LD blo
 If you use `sldp`, please cite
 
 [Reshef, et al. Detecting genome-wide directional effects of transcription factor binding on polygenic disease risk.
-BiorXiv, 2018.](https://www.biorxiv.org/content/early/2018/05/04/204685)
+Nature Genetics, 2018.](https://www.nature.com/articles/s41588-018-0196-7)
