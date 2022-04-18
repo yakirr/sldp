@@ -55,7 +55,7 @@ def collapse_to_chunks(ldblocks, numerators, denominators, numblocks):
 
 # compute estimate of effect size
 def get_est(num, denom, k, num_background):
-    ind = range(num_background) + [num_background+k]
+    ind = list(range(num_background)) + [num_background+k]
     num = num[ind]
     denom = denom[ind][:,ind]
     try:
