@@ -10,7 +10,42 @@ import ypy.pretty as pretty
 import sldp.config as config
 
 
-def main(args):
+def main():
+    parser = argparse.ArgumentParser()
+    # optional arguments
+    parser.add_argument('--spectrum-percent', type=float, default=95,
+            help='Determines how many eigenvectors are kept in the truncated SVD. ' +\
+                    'A value of x means that x percent of the eigenspectrum will be kept. '+\
+                    'Default value: 95')
+    parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int,
+            help='Space-delimited list of chromosomes to analyze. Default is 1..22')
+
+    # configurable arguments
+    parser.add_argument('--config', default=None,
+            help='Path to a json file with values for other parameters. ' +\
+                    'Values in this file will be overridden by any values passed ' +\
+                    'explicitly via the command line.')
+    parser.add_argument('--svd-stem', default=None,
+            help='Path to directory in which output files will be stored. ' +\
+                    'If not supplied, will be read from config file.')
+    parser.add_argument('--bfile-chr', default=None,
+            help='Path to plink bfile of reference panel to use, not including ' +\
+                    'chromosome number. If not supplied, will be read from config file.')
+    parser.add_argument('--print-snps', default=None,
+            help='Path to set of potentially typed SNPs. If not supplied, will be read '+\
+                    'from config file.')
+    parser.add_argument('--ld-blocks', default=None,
+            help='Path to UCSC bed file containing one bed interval per LD block. If '+\
+                    'not supplied, will be read from config file.')
+
+    print('=====')
+    print(' '.join(sys.argv))
+    print('=====')
+    args = parser.parse_args()
+    config.add_default_params(args)
+    pretty.print_namespace(args)
+    print('=====')
+
     # basic initialization
     mhc = [25684587, 35455756]
     refpanel = gd.Dataset(args.bfile_chr)
@@ -74,39 +109,4 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    # optional arguments
-    parser.add_argument('--spectrum-percent', type=float, default=95,
-            help='Determines how many eigenvectors are kept in the truncated SVD. ' +\
-                    'A value of x means that x percent of the eigenspectrum will be kept. '+\
-                    'Default value: 95')
-    parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int,
-            help='Space-delimited list of chromosomes to analyze. Default is 1..22')
-
-    # configurable arguments
-    parser.add_argument('--config', default=None,
-            help='Path to a json file with values for other parameters. ' +\
-                    'Values in this file will be overridden by any values passed ' +\
-                    'explicitly via the command line.')
-    parser.add_argument('--svd-stem', default=None,
-            help='Path to directory in which output files will be stored. ' +\
-                    'If not supplied, will be read from config file.')
-    parser.add_argument('--bfile-chr', default=None,
-            help='Path to plink bfile of reference panel to use, not including ' +\
-                    'chromosome number. If not supplied, will be read from config file.')
-    parser.add_argument('--print-snps', default=None,
-            help='Path to set of potentially typed SNPs. If not supplied, will be read '+\
-                    'from config file.')
-    parser.add_argument('--ld-blocks', default=None,
-            help='Path to UCSC bed file containing one bed interval per LD block. If '+\
-                    'not supplied, will be read from config file.')
-
-    print('=====')
-    print(' '.join(sys.argv))
-    print('=====')
-    args = parser.parse_args()
-    config.add_default_params(args)
-    pretty.print_namespace(args)
-    print('=====')
-
-    main(args)
+    main()

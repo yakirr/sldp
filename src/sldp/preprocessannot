@@ -4,21 +4,18 @@ import argparse, sys
 import sldp.config as config
 import ypy.pretty as pretty
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser()
     # required arguments
-    parser.add_argument('--sumstats-stem', required=True,
-            help='path to sumstats.gz files, not including ".sumstats.gz" extension')
+    parser.add_argument('--sannot-chr', nargs='+', required=True,
+            help='Multiple (space-delimited) paths to sannot.gz files, not including '+\
+                    'chromosome')
 
     # optional arguments
-    parser.add_argument('--refpanel-name', default='KG3.95',
-            help='suffix added to the directory created for storing output. '+\
-                    'Default is KG3.95, corresponding to 1KG Phase 3 reference panel '+\
-                    'processed with default parameters by preprocessrefpanel.py.')
-    parser.add_argument('-no-M-5-50', default=False, action='store_true',
-            help='Dont filter to SNPs with MAF >= 0.05 when estimating heritabilities')
-    parser.add_argument('--set-h2g', default=None, type=float,
-            help='Scale Z-scores to achieve this approximate heritability')
+    parser.add_argument('--alpha', type=float, default=-1,
+        help='scale annotation values by sqrt(2*maf(1-maf))^{alpha+1}. '+\
+                '-1 means assume annotation values are already per-normalized-genotype, '+\
+                '0 means assume they were per allele. Default is -1.')
     parser.add_argument('--chroms', nargs='+', default=range(1,23), type=int,
             help='Space-delimited list of chromosomes to analyze. Default is 1..22')
 
@@ -30,17 +27,9 @@ if __name__ == '__main__':
     parser.add_argument('--bfile-chr', default=None,
             help='Path to plink bfile of reference panel to use, not including ' +\
                     'chromosome number. If not supplied, will be read from config file.')
-    parser.add_argument('--svd-stem', default=None,
-            help='Path to directory containing truncated svds of reference panel, by LD '+\
-                    'block, as produced by preprocessrefpanel.py. If not supplied, will be '+\
-                    'read from config file.')
     parser.add_argument('--print-snps', default=None,
             help='Path to set of potentially typed SNPs. If not supplied, will be read '+\
                     'from config file.')
-    parser.add_argument('--ldscores-chr', default=None,
-            help='Path to LD scores at a smallish set of SNPs (~1M). LD should be computed '+\
-                    'to all potentially causal snps. Used for heritability estimation. '+\
-                    'If not supplied, will be read from config file.')
     parser.add_argument('--ld-blocks', default=None,
             help='Path to UCSC bed file containing one bed interval per LD block. If '+\
                     'not supplied, will be read from config file.')
@@ -53,5 +42,8 @@ if __name__ == '__main__':
     pretty.print_namespace(args)
     print('=====')
 
-    import sldp.preprocesspheno as preprocesspheno
-    preprocesspheno.main(args)
+    import sldp.preprocessannot as preprocessannot
+    preprocessannot.main(args)
+
+if __name__ == "__main__":
+    main()

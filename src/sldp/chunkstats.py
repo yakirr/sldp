@@ -33,7 +33,7 @@ def collapse_to_chunks(ldblocks, numerators, denominators, numblocks):
                 [numerators[l] for l in ldblock_ind]))
             chunk_denoms.append(sum(
                 [denominators[l] for l in ldblock_ind]))
-            chunkinfo = chunkinfo.append({
+            newrow_chunkinfo = {
                 'ldblock_begin':min(ldblock_ind),
                 'ldblock_end':max(ldblock_ind)+1,
                 'chr_begin':ldblocks.loc[min(ldblock_ind),'chr'],
@@ -42,8 +42,8 @@ def collapse_to_chunks(ldblocks, numerators, denominators, numblocks):
                 'bp_end':ldblocks.loc[max(ldblock_ind),'end'],
                 'snpind_begin':ldblocks.loc[min(ldblock_ind),'snpind_begin'],
                 'snpind_end':ldblocks.loc[max(ldblock_ind),'snpind_end'],
-                'numsnps':sum(ldblocks.loc[ldblock_ind,'M_H'])},
-                ignore_index=True)
+                'numsnps':sum(ldblocks.loc[ldblock_ind,'M_H'])}
+            chunkinfo = pd.concat([chunkinfo, pd.DataFrame([newrow_chunkinfo])], ignore_index=True)
 
     ## compute leave-one-out sums
     loonumerators = []; loodenominators = []
